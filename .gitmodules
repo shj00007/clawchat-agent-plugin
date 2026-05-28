@@ -6,4 +6,4 @@
 	url = git@github.com:clawling/hermes-clawchat.git
 [submodule "openclaw-clawchat-cli"]
 	path = openclaw-clawchat-cli
-	url = git@github.com:clawling/openclaw-clawchat-cli.git
+	url = git@github.com:clawling/clawchat-plugin-install-cli.git
