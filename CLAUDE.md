@@ -2,68 +2,72 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this repo is
+`clawchat-agent-plugin` is an **aggregator git repo**: it owns no application code itself, only a `docs/` tree and three submodules pinned in `.gitmodules`. There is **no top-level build, test, or lint** — every command runs inside a submodule.
 
-`clawchat-agent-plugin` is an **aggregator git repo** that bundles three independent submodules. There is **no top-level build, test, or lint** — every command runs inside a submodule. Edit inside each submodule; this parent repo only tracks pinned submodule commits in `.gitmodules`. When using a git worktree to execute a plan, create it **inside the relevant submodule** (each leaf is its own git repo) — the aggregator root is not where code work happens.
+## Directory structure
 
-| Submodule | Language / toolchain | Role | Published as |
+```
+clawchat-agent-plugin/              # aggregator repo (git@github.com:shj00007/clawchat-agent-plugin.git)
+├── .gitmodules                     # pins the three submodules below
+├── CLAUDE.md
+├── docs/                           # aggregator-level docs (ecosystem context; MAY mention msghub)
+│   ├── README.md / README.zh.md
+│   └── openclaw-vs-hermes.md/.zh.md  # side-by-side comparison of the two adapters
+├── clawchat-plugin-openclaw/       # submodule
+├── clawchat-plugin-hermes-agent/   # submodule
+└── clawchat-plugin-install-cli/    # submodule
+```
+
+Each submodule is an independent repo in its own language. Read its local `CLAUDE.md` / `AGENTS.md` / `README.md` before working inside it.
+
+| Directory | Language / toolchain | Role | Published as |
 |-----------|----------------------|------|--------------|
-| `clawchat-plugin-openclaw/` | TypeScript (npm + Vitest) | OpenClaw **channel** plugin. Owns a Protocol-v2 WebSocket client + REST surface; persists state in plugin-owned SQLite. | npm `@newbase-clawchat/openclaw-clawchat` |
-| `clawchat-plugin-hermes-agent/` | Python ≥3.11 (uv + pytest) | Hermes Agent **gateway platform** plugin. Registers `clawchat` platform via `ctx.register_platform(...)`; no DB, only file-backed memory. | wheel `clawchat-gateway`; Hermes plugin id `clawchat` |
-| `clawchat-plugin-install-cli/` | TypeScript (pnpm workspaces + Vitest) | CLI installer that delegates to each host's plugin manager. Two packages: `packages/cli` (published) + `packages/core` (workspace-private, inlined). | npm `@newbase-clawchat/clawchat-cli` |
+| `clawchat-plugin-openclaw/` | TypeScript (npm + Vitest) | OpenClaw **channel** plugin. Protocol-v2 WebSocket client + REST surface; plugin-owned SQLite state. | npm `@newbase-clawchat/openclaw-clawchat` |
+| `clawchat-plugin-hermes-agent/` | Python ≥3.11 (uv + pytest) | Hermes Agent **gateway platform** plugin. Registers a `clawchat` platform via `ctx.register_platform(...)`; file-backed memory, no DB. | wheel `clawchat-gateway`; Hermes plugin id `clawchat` |
+| `clawchat-plugin-install-cli/` | TypeScript (pnpm workspaces + Vitest) | CLI installer that delegates to each host's plugin manager. `packages/cli` (published) + `packages/core` (workspace-private). | npm `@newbase-clawchat/clawchat-cli` |
 
-## Architecture: two peer adapters + one installer
+## Where to read (project-internal matters)
 
-`openclaw-clawchat` and `hermes-clawchat` are **peer adapters of the same ClawChat Protocol v2 contract** (WebSocket + a small REST surface) — one in TypeScript for OpenClaw, one in Python for Hermes. They expose the **same 22 `clawchat_*` agent tools** and onboard the same way (exchange a one-time code at `POST /v1/agents/connect`). `openclaw-clawchat-cli` is the end-user installer for both (`install --target openclaw|hermes`).
+For anything *inside* a submodule — its architecture, wire protocol, tool set, build/test commands, parity obligations, server-decoupling rules — read that submodule's own docs (start from its `AGENTS.md`/`README.md`, which point into its `docs/`). They are authoritative; don't rely on this aggregator file. Cross-cutting/ecosystem matters live in this repo's own `docs/`.
 
-The two adapters share a near-identical module layout under different file extensions (e.g. `protocol`, `inbound`, `outbound`, `streaming`, `tools`, `media-runtime`, `storage`, `config`, `profile-sync`). The TS source is in `src/`; the Python source is in `clawchat_gateway/`.
+## Git structure
 
-Full side-by-side comparison: `docs/openclaw-vs-hermes.md`.
+Four independent repos, all on branch `main`:
 
-## Two load-bearing constraints
+| Repo | Remote | Tracked here as |
+|------|--------|-----------------|
+| aggregator (this repo) | `git@github.com:shj00007/clawchat-agent-plugin.git` | — |
+| openclaw plugin | `git@github.com:clawling/clawchat-plugin-openclaw.git` | submodule `openclaw-clawchat` → `clawchat-plugin-openclaw/` |
+| hermes plugin | `git@github.com:clawling/clawchat-plugin-hermes-agent.git` | submodule `hermes-clawchat` → `clawchat-plugin-hermes-agent/` |
+| install CLI | `git@github.com:clawling/clawchat-plugin-install-cli.git` | submodule `openclaw-clawchat-cli` → `clawchat-plugin-install-cli/` |
 
-**1. Adapter parity is a maintenance obligation.** Because one contract is implemented twice, changing one adapter usually means mirroring the change in the other. The shared surfaces that must stay in sync:
-- **Wire protocol** — update each repo's local `docs/client-integration.md` first, then `protocol`/`inbound` in both.
-- **Tool set** — the 22 tools across `openclaw.plugin.json` + `src/tools.ts` ↔ `plugin.yaml` (`provides_tools`) + `clawchat_gateway/plugin_tools.py`.
-- **Prompts** — `prompts/platform.md`, `default-owner-behavior.md`, `default-group-bio.md`.
-- **Bundled skill** — `skills/clawchat/SKILL.md`.
-- **Memory contract** — `owner.md` / `users/` / `groups/` layout; canonical write-up in `clawchat-plugin-openclaw/docs/clawchat-memory.md`.
-- **Connection defaults** — reconnect / heartbeat / ack / streaming (mind the `forwardThinking` vs `show_think_output` divergence noted in the comparison doc).
+Note the submodule **name** in `.gitmodules` differs from its folder **path** (e.g. name `openclaw-clawchat`, path `clawchat-plugin-openclaw/`). The aggregator only stores each submodule's pinned commit SHA, never its files.
 
-**2. The two submodule plugins must stay decoupled from the ClawChat server (`clawchat-msghub`).** Inside `clawchat-plugin-openclaw/` and `clawchat-plugin-hermes-agent/`, the authoritative docs (README, AGENTS.md, `docs/*.md`) must **not** reference `clawchat-msghub`, server binaries, or server-internal tech. Each plugin only knows "the WebSocket docking protocol", documented in its **local** `docs/client-integration.md` — that local doc is the contract to update when the protocol changes. Sibling-plugin cross-references are fine; only server coupling is banned. The **aggregator-level** `docs/` (this repo's own `docs/`) MAY mention msghub as ecosystem context.
+### How to update and commit
 
-## Docs-as-source-of-truth
+**Real code/doc changes always happen inside a submodule** — never commit application code to the aggregator.
 
-Each submodule keeps deep docs in its own `docs/` and treats them as authoritative; the orientation files (`AGENTS.md`, README) deliberately stay thin. Before changing a feature, read the matching `docs/` page; after changing behavior, update that page in the **same change set**. Per-submodule entry points:
-- `clawchat-plugin-openclaw/AGENTS.md` → `docs/README.md`, reference `docs/openclaw-clawchat.md`
-- `clawchat-plugin-hermes-agent/README.md` → `docs/README.md`, `docs/architecture.md`
-- `clawchat-plugin-install-cli/AGENTS.md` → `docs/architecture.md`, `docs/development.md`
+1. **Edit + commit in the submodule.** `cd` into the submodule, make changes, commit, and push to its own remote on `main`:
+   ```bash
+   cd clawchat-plugin-openclaw
+   # ...edit, run that submodule's own tests...
+   git add -p && git commit -m "feat: ..." && git push origin main
+   ```
+2. **Bump the pin in the aggregator.** Pushing the submodule moves its SHA, so the parent now shows the submodule as modified. Record the new pin from the aggregator root:
+   ```bash
+   cd ..                               # back to aggregator root
+   git add clawchat-plugin-openclaw    # stage the moved pointer
+   git commit -m "chore: bump openclaw submodule pin"
+   git push origin main
+   ```
+   Aggregator-only commits touch `.gitmodules`, the pinned SHAs, `docs/`, or this file.
 
-## Commands
+### Cloning & refreshing
 
-### openclaw-clawchat (npm)
 ```bash
-npm test                                   # Vitest; tests live next to source (*.test.ts)
-npm test -- src/file.test.ts -t "name"     # single test
-npm run typecheck                          # tsc --noEmit
-npm run build                              # tsc -p tsconfig.build.json → dist/
+git clone --recurse-submodules git@github.com:shj00007/clawchat-agent-plugin.git
+git submodule update --init --recursive   # after a plain clone
+git submodule update --remote             # fast-forward each submodule to its remote main
 ```
-Dev entrypoint stays `index.ts`; npm installs use the compiled `dist/` entrypoint. High-value contract tests: `src/manifest.test.ts`, `src/tools.test.ts`. E2E flows under `.e2e/` (read `.e2e/docs/install-clawchat-plugin-e2e.md` first): `npm run test:e2e:install-clawchat-plugin[:smoke|:agent|:agent:smoke]`. Optional OpenClaw host source for API lookup: `npm run dev:openclaw-source` (clones into git-ignored `tmp/openclaw/` — a reference only, never patch it).
 
-### hermes-clawchat (uv)
-```bash
-uv pip install -e ".[test]"   # install with test extras
-uv run pytest                 # tests/ is .gitignore'd — present only in dev checkouts
-uv run pytest tests/test_x.py
-```
-The published checkout intentionally excludes `tests/`. Hermes host source lookup is documented in `docs/hermes-source-lookup.md` (do not guess host semantics).
-
-### openclaw-clawchat-cli (pnpm)
-```bash
-pnpm install
-pnpm typecheck    # -r across packages
-pnpm test         # -r; Vitest per package, incl. install-script integration tests
-pnpm build        # -r; tsdown
-pnpm --filter @newbase-clawchat/clawchat-cli test   # single package
-```
-No dedicated linter — consistency with neighbouring files is the bar. Conventional Commits with a package scope, e.g. `feat(cli): ...`, `fix(core): ...`. Installer logic lives in `packages/core/src/installers/` (`openclaw.ts`, `hermes.ts`). The runtime install guide consumed by end-users/agents is `install.md` (also published to R2).
+When using a git worktree to execute a plan, create it **inside the relevant submodule** (each leaf is its own repo) — the aggregator root is not where code work happens.
