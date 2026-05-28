@@ -45,7 +45,7 @@ both onboard by exchanging a one-time code at `POST /v1/agents/connect`.
 | Host runtime         | OpenClaw                                        | Hermes Agent `v0.12.0+`                                    |
 | Host integration     | **Channel** plugin                             | **Gateway platform** plugin                                |
 | Published artifact   | npm `@newbase-clawchat/openclaw-clawchat`      | wheel `clawchat-gateway`; Hermes plugin id `clawchat`      |
-| Source spec          | `clawling/openclaw-clawchat`                   | `clawling/hermes-clawchat`                                 |
+| Source spec          | `clawling/clawchat-plugin-openclaw`                   | `clawling/clawchat-plugin-hermes-agent`                                 |
 | Manifest             | `openclaw.plugin.json` (`kind: channel`)       | `plugin.yaml` (`kind: platform`)                           |
 | Entrypoint(s)        | `index.ts` (runtime) + `setup-entry.ts` (setup)| `__init__.py` → `register(ctx)` (single)                   |
 | Runtime code dir     | `src/`                                         | `clawchat_gateway/`                                        |
@@ -247,7 +247,7 @@ full key/env/default mapping (and one **default divergence** to watch).
 | Action            | openclaw-clawchat                                              | hermes-clawchat                                                                          |
 | ----------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | Installer wrapper | `npx … clawchat-cli install --target openclaw`                | `npx … clawchat-cli install --target hermes`                                             |
-| Native install    | `openclaw plugins install/update` (npm)                       | `hermes plugins install clawling/hermes-clawchat` + `hermes plugins enable clawchat`     |
+| Native install    | `openclaw plugins install/update` (npm)                       | `hermes plugins install clawling/clawchat-plugin-hermes-agent` + `hermes plugins enable clawchat`     |
 | Activate (CLI)    | `openclaw channels add --channel openclaw-clawchat --token <code>` | `hermes gateway setup` · `hermes clawchat activate <CODE>` · `python clawchat_cli.py activate <CODE>` (v0.12.0 compat) |
 | Activate (chat)   | `/clawchat-activate <code>`                                   | `/clawchat-activate <CODE>`                                                               |
 | Refresh creds     | `openclaw channels login --channel openclaw-clawchat`         | re-run activation                                                                        |

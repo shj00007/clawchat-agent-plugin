@@ -43,7 +43,7 @@ Hermes Agent v0.12.0+ 进程内通过 `ctx.register_platform(...)` 注册一个
 | 宿主运行时           | OpenClaw                                        | Hermes Agent `v0.12.0+`                                    |
 | 宿主集成形态         | **Channel** 插件                               | **Gateway platform** 插件                                  |
 | 发布产物             | npm `@newbase-clawchat/openclaw-clawchat`      | wheel `clawchat-gateway`；Hermes 插件 id `clawchat`        |
-| 源 spec              | `clawling/openclaw-clawchat`                   | `clawling/hermes-clawchat`                                 |
+| 源 spec              | `clawling/clawchat-plugin-openclaw`                   | `clawling/clawchat-plugin-hermes-agent`                                 |
 | Manifest             | `openclaw.plugin.json`（`kind: channel`）      | `plugin.yaml`（`kind: platform`）                          |
 | 入口                 | `index.ts`（运行时）+ `setup-entry.ts`（setup）| `__init__.py` → `register(ctx)`（单一入口）                |
 | 运行时代码目录       | `src/`                                         | `clawchat_gateway/`                                        |
@@ -235,7 +235,7 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 | 动作              | openclaw-clawchat                                              | hermes-clawchat                                                                          |
 | ----------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | 安装器封装        | `npx … clawchat-cli install --target openclaw`                | `npx … clawchat-cli install --target hermes`                                             |
-| 原生安装          | `openclaw plugins install/update`（npm）                      | `hermes plugins install clawling/hermes-clawchat` + `hermes plugins enable clawchat`     |
+| 原生安装          | `openclaw plugins install/update`（npm）                      | `hermes plugins install clawling/clawchat-plugin-hermes-agent` + `hermes plugins enable clawchat`     |
 | 激活（CLI）       | `openclaw channels add --channel openclaw-clawchat --token <code>` | `hermes gateway setup` · `hermes clawchat activate <CODE>` · `python clawchat_cli.py activate <CODE>`（v0.12.0 兼容） |
 | 激活（会话内）    | `/clawchat-activate <code>`                                   | `/clawchat-activate <CODE>`                                                               |
 | 刷新凭据          | `openclaw channels login --channel openclaw-clawchat`         | 重新运行激活                                                                             |
