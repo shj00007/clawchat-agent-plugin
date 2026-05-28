@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Submodule | Language / toolchain | Role | Published as |
 |-----------|----------------------|------|--------------|
-| `openclaw-clawchat/` | TypeScript (npm + Vitest) | OpenClaw **channel** plugin. Owns a Protocol-v2 WebSocket client + REST surface; persists state in plugin-owned SQLite. | npm `@newbase-clawchat/openclaw-clawchat` |
-| `hermes-clawchat/` | Python ≥3.11 (uv + pytest) | Hermes Agent **gateway platform** plugin. Registers `clawchat` platform via `ctx.register_platform(...)`; no DB, only file-backed memory. | wheel `clawchat-gateway`; Hermes plugin id `clawchat` |
-| `openclaw-clawchat-cli/` | TypeScript (pnpm workspaces + Vitest) | CLI installer that delegates to each host's plugin manager. Two packages: `packages/cli` (published) + `packages/core` (workspace-private, inlined). | npm `@newbase-clawchat/clawchat-cli` |
+| `clawchat-plugin-openclaw/` | TypeScript (npm + Vitest) | OpenClaw **channel** plugin. Owns a Protocol-v2 WebSocket client + REST surface; persists state in plugin-owned SQLite. | npm `@newbase-clawchat/openclaw-clawchat` |
+| `clawchat-plugin-hermes-agent/` | Python ≥3.11 (uv + pytest) | Hermes Agent **gateway platform** plugin. Registers `clawchat` platform via `ctx.register_platform(...)`; no DB, only file-backed memory. | wheel `clawchat-gateway`; Hermes plugin id `clawchat` |
+| `clawchat-plugin-install-cli/` | TypeScript (pnpm workspaces + Vitest) | CLI installer that delegates to each host's plugin manager. Two packages: `packages/cli` (published) + `packages/core` (workspace-private, inlined). | npm `@newbase-clawchat/clawchat-cli` |
 
 ## Architecture: two peer adapters + one installer
 
@@ -27,17 +27,17 @@ Full side-by-side comparison: `docs/openclaw-vs-hermes.md`.
 - **Tool set** — the 22 tools across `openclaw.plugin.json` + `src/tools.ts` ↔ `plugin.yaml` (`provides_tools`) + `clawchat_gateway/plugin_tools.py`.
 - **Prompts** — `prompts/platform.md`, `default-owner-behavior.md`, `default-group-bio.md`.
 - **Bundled skill** — `skills/clawchat/SKILL.md`.
-- **Memory contract** — `owner.md` / `users/` / `groups/` layout; canonical write-up in `openclaw-clawchat/docs/clawchat-memory.md`.
+- **Memory contract** — `owner.md` / `users/` / `groups/` layout; canonical write-up in `clawchat-plugin-openclaw/docs/clawchat-memory.md`.
 - **Connection defaults** — reconnect / heartbeat / ack / streaming (mind the `forwardThinking` vs `show_think_output` divergence noted in the comparison doc).
 
-**2. The two submodule plugins must stay decoupled from the ClawChat server (`clawchat-msghub`).** Inside `openclaw-clawchat/` and `hermes-clawchat/`, the authoritative docs (README, AGENTS.md, `docs/*.md`) must **not** reference `clawchat-msghub`, server binaries, or server-internal tech. Each plugin only knows "the WebSocket docking protocol", documented in its **local** `docs/client-integration.md` — that local doc is the contract to update when the protocol changes. Sibling-plugin cross-references are fine; only server coupling is banned. The **aggregator-level** `docs/` (this repo's own `docs/`) MAY mention msghub as ecosystem context.
+**2. The two submodule plugins must stay decoupled from the ClawChat server (`clawchat-msghub`).** Inside `clawchat-plugin-openclaw/` and `clawchat-plugin-hermes-agent/`, the authoritative docs (README, AGENTS.md, `docs/*.md`) must **not** reference `clawchat-msghub`, server binaries, or server-internal tech. Each plugin only knows "the WebSocket docking protocol", documented in its **local** `docs/client-integration.md` — that local doc is the contract to update when the protocol changes. Sibling-plugin cross-references are fine; only server coupling is banned. The **aggregator-level** `docs/` (this repo's own `docs/`) MAY mention msghub as ecosystem context.
 
 ## Docs-as-source-of-truth
 
 Each submodule keeps deep docs in its own `docs/` and treats them as authoritative; the orientation files (`AGENTS.md`, README) deliberately stay thin. Before changing a feature, read the matching `docs/` page; after changing behavior, update that page in the **same change set**. Per-submodule entry points:
-- `openclaw-clawchat/AGENTS.md` → `docs/README.md`, reference `docs/openclaw-clawchat.md`
-- `hermes-clawchat/README.md` → `docs/README.md`, `docs/architecture.md`
-- `openclaw-clawchat-cli/AGENTS.md` → `docs/architecture.md`, `docs/development.md`
+- `clawchat-plugin-openclaw/AGENTS.md` → `docs/README.md`, reference `docs/openclaw-clawchat.md`
+- `clawchat-plugin-hermes-agent/README.md` → `docs/README.md`, `docs/architecture.md`
+- `clawchat-plugin-install-cli/AGENTS.md` → `docs/architecture.md`, `docs/development.md`
 
 ## Commands
 

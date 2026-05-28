@@ -9,8 +9,8 @@ adapters of the same contract**: one in TypeScript for the OpenClaw host, one
 in Python for the Hermes host.
 
 > **Sources of truth.** Every claim here is derived from each submodule's own
-> authoritative docs — `openclaw-clawchat/docs/openclaw-clawchat.md` and
-> `hermes-clawchat/docs/`. The wire contract itself is owned by
+> authoritative docs — `clawchat-plugin-openclaw/docs/openclaw-clawchat.md` and
+> `clawchat-plugin-hermes-agent/docs/`. The wire contract itself is owned by
 > `clawchat-msghub` (`docs/features/msghub/protocol-v2-*.md`); neither plugin
 > defines it. When this doc and a submodule doc disagree, the submodule doc
 > wins. See [Source-of-truth pointers](#source-of-truth-pointers).
@@ -305,8 +305,8 @@ not an accident. When you touch any of the following, change **both** plugins
 
 1. **Wire protocol.** Edit the `clawchat-msghub` reference
    (`docs/features/msghub/protocol-v2-*.md`) **first**, then
-   `openclaw-clawchat/src/protocol.ts` + `inbound.ts` and
-   `hermes-clawchat/clawchat_gateway/protocol.py` + `inbound.py`.
+   `clawchat-plugin-openclaw/src/protocol.ts` + `inbound.ts` and
+   `clawchat-plugin-hermes-agent/clawchat_gateway/protocol.py` + `inbound.py`.
 2. **Tool set.** Keep the 22 tools in parity:
    `openclaw.plugin.json` (`contracts.tools`) + `src/tools.ts` ↔
    `plugin.yaml` (`provides_tools`) + `clawchat_gateway/plugin_tools.py`.
@@ -315,7 +315,7 @@ not an accident. When you touch any of the following, change **both** plugins
 4. **Bundled skill.** `skills/clawchat/SKILL.md` guidance should match.
 5. **Memory contract.** `owner.md` / `users/` / `groups/` layout, the
    memory-vs-metadata tool split, and allowed metadata fields are shared (the
-   canonical write-up lives in `openclaw-clawchat/docs/clawchat-memory.md`).
+   canonical write-up lives in `clawchat-plugin-openclaw/docs/clawchat-memory.md`).
 6. **Connection defaults.** Reconnect / heartbeat / ack / streaming defaults are
    meant to match — and mind the `forwardThinking` vs `show_think_output`
    default divergence noted in §5.
@@ -326,12 +326,12 @@ not an accident. When you touch any of the following, change **both** plugins
 
 | Topic                                   | Where it lives                                                        |
 | --------------------------------------- | --------------------------------------------------------------------- |
-| OpenClaw plugin reference (config, tools, activation, streaming, troubleshooting) | `openclaw-clawchat/docs/openclaw-clawchat.md` |
-| OpenClaw coding-agent orientation       | `openclaw-clawchat/AGENTS.md`                                         |
-| Shared ClawChat memory contract         | `openclaw-clawchat/docs/clawchat-memory.md`                           |
-| Protocol v2 client integration (mirror) | `openclaw-clawchat/docs/client-integration.md`                        |
-| Hermes integration surface              | `hermes-clawchat/docs/architecture.md`                                |
-| Hermes config (env + `config.yaml`)     | `hermes-clawchat/docs/configuration.md`                               |
-| Hermes tool catalogue                   | `hermes-clawchat/docs/reference/tools.md`                             |
-| Hermes install + activation             | `hermes-clawchat/docs/install.md`                                     |
+| OpenClaw plugin reference (config, tools, activation, streaming, troubleshooting) | `clawchat-plugin-openclaw/docs/openclaw-clawchat.md` |
+| OpenClaw coding-agent orientation       | `clawchat-plugin-openclaw/AGENTS.md`                                         |
+| Shared ClawChat memory contract         | `clawchat-plugin-openclaw/docs/clawchat-memory.md`                           |
+| Protocol v2 client integration (mirror) | `clawchat-plugin-openclaw/docs/client-integration.md`                        |
+| Hermes integration surface              | `clawchat-plugin-hermes-agent/docs/architecture.md`                                |
+| Hermes config (env + `config.yaml`)     | `clawchat-plugin-hermes-agent/docs/configuration.md`                               |
+| Hermes tool catalogue                   | `clawchat-plugin-hermes-agent/docs/reference/tools.md`                             |
+| Hermes install + activation             | `clawchat-plugin-hermes-agent/docs/install.md`                                     |
 | **Canonical wire protocol**             | `clawchat-msghub/clawchat-msghub/docs/features/msghub/protocol-v2-*.md` (owner) |

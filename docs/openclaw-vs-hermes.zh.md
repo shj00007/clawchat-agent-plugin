@@ -8,8 +8,8 @@
 宿主，一个用 Python 面向 Hermes 宿主。
 
 > **权威来源（Sources of truth）。** 这里的每一条结论都来自各 submodule 自身的
-> 权威文档 —— `openclaw-clawchat/docs/openclaw-clawchat.md` 和
-> `hermes-clawchat/docs/`。线路协议本身由 `clawchat-msghub`
+> 权威文档 —— `clawchat-plugin-openclaw/docs/openclaw-clawchat.md` 和
+> `clawchat-plugin-hermes-agent/docs/`。线路协议本身由 `clawchat-msghub`
 > （`docs/features/msghub/protocol-v2-*.md`）拥有，两个插件都不定义它。当本文档
 > 与某个 submodule 文档冲突时，以 submodule 文档为准。参见
 > [权威来源指引](#权威来源指引)。
@@ -291,8 +291,8 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 
 1. **线路协议。** **先**改 `clawchat-msghub` 参考文档
    （`docs/features/msghub/protocol-v2-*.md`），再改
-   `openclaw-clawchat/src/protocol.ts` + `inbound.ts` 与
-   `hermes-clawchat/clawchat_gateway/protocol.py` + `inbound.py`。
+   `clawchat-plugin-openclaw/src/protocol.ts` + `inbound.ts` 与
+   `clawchat-plugin-hermes-agent/clawchat_gateway/protocol.py` + `inbound.py`。
 2. **工具集。** 保持这 22 个工具一致：
    `openclaw.plugin.json`（`contracts.tools`）+ `src/tools.ts` ↔
    `plugin.yaml`（`provides_tools`）+ `clawchat_gateway/plugin_tools.py`。
@@ -301,7 +301,7 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 4. **捆绑 skill。** `skills/clawchat/SKILL.md` 的指引应一致。
 5. **memory 契约。** `owner.md` / `users/` / `groups/` 布局、memory 与 metadata
    工具的切分、以及可写 metadata 字段是共享的（权威说明位于
-   `openclaw-clawchat/docs/clawchat-memory.md`）。
+   `clawchat-plugin-openclaw/docs/clawchat-memory.md`）。
 6. **连接默认值。** 重连 / 心跳 / ack / 流式默认值理应一致 —— 并留意 §5 中提到的
    `forwardThinking` 与 `show_think_output` 默认值分歧。
 
@@ -311,12 +311,12 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 
 | 主题                                    | 所在位置                                                              |
 | --------------------------------------- | --------------------------------------------------------------------- |
-| OpenClaw 插件参考（配置、工具、激活、流式、排障） | `openclaw-clawchat/docs/openclaw-clawchat.md` |
-| OpenClaw 编码 agent 导览                | `openclaw-clawchat/AGENTS.md`                                        |
-| 共享的 ClawChat memory 契约             | `openclaw-clawchat/docs/clawchat-memory.md`                           |
-| Protocol v2 客户端集成（镜像）          | `openclaw-clawchat/docs/client-integration.md`                        |
-| Hermes 集成面                           | `hermes-clawchat/docs/architecture.md`                                |
-| Hermes 配置（环境变量 + `config.yaml`） | `hermes-clawchat/docs/configuration.md`                               |
-| Hermes 工具目录                         | `hermes-clawchat/docs/reference/tools.md`                             |
-| Hermes 安装 + 激活                      | `hermes-clawchat/docs/install.md`                                     |
+| OpenClaw 插件参考（配置、工具、激活、流式、排障） | `clawchat-plugin-openclaw/docs/openclaw-clawchat.md` |
+| OpenClaw 编码 agent 导览                | `clawchat-plugin-openclaw/AGENTS.md`                                        |
+| 共享的 ClawChat memory 契约             | `clawchat-plugin-openclaw/docs/clawchat-memory.md`                           |
+| Protocol v2 客户端集成（镜像）          | `clawchat-plugin-openclaw/docs/client-integration.md`                        |
+| Hermes 集成面                           | `clawchat-plugin-hermes-agent/docs/architecture.md`                                |
+| Hermes 配置（环境变量 + `config.yaml`） | `clawchat-plugin-hermes-agent/docs/configuration.md`                               |
+| Hermes 工具目录                         | `clawchat-plugin-hermes-agent/docs/reference/tools.md`                             |
+| Hermes 安装 + 激活                      | `clawchat-plugin-hermes-agent/docs/install.md`                                     |
 | **权威线路协议**                        | `clawchat-msghub/clawchat-msghub/docs/features/msghub/protocol-v2-*.md`（所有者） |

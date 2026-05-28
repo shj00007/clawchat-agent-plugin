@@ -21,9 +21,9 @@ Each submodule owns its own deep docs; treat those as the source of truth.
 
 | Submodule              | Start here                                              |
 | ---------------------- | ------------------------------------------------------- |
-| `openclaw-clawchat`    | [`../openclaw-clawchat/docs/README.md`](../openclaw-clawchat/docs/README.md) · plugin reference `openclaw-clawchat/docs/openclaw-clawchat.md` |
-| `hermes-clawchat`      | [`../hermes-clawchat/docs/README.md`](../hermes-clawchat/docs/README.md) |
-| `openclaw-clawchat-cli`| [`../openclaw-clawchat-cli/README.md`](../openclaw-clawchat-cli/README.md) |
+| `openclaw-clawchat`    | [`../clawchat-plugin-openclaw/docs/README.md`](../clawchat-plugin-openclaw/docs/README.md) · plugin reference `clawchat-plugin-openclaw/docs/openclaw-clawchat.md` |
+| `hermes-clawchat`      | [`../clawchat-plugin-hermes-agent/docs/README.md`](../clawchat-plugin-hermes-agent/docs/README.md) |
+| `openclaw-clawchat-cli`| [`../clawchat-plugin-install-cli/README.md`](../clawchat-plugin-install-cli/README.md) |
 
 ## Upstream contract (owned elsewhere)
 
