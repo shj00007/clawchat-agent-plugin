@@ -27,7 +27,8 @@ channel，自持一个 Protocol-v2 WebSocket 客户端，并暴露一组 `clawch
 发行包名 `clawchat-gateway`，Hermes 插件 id 为 `clawchat`）。它在一个运行中的
 Hermes Agent v0.12.0+ 进程内通过 `ctx.register_platform(...)` 注册一个
 `clawchat` gateway platform，提供同样的 `clawchat_*` 工具和一个捆绑 skill，并且
-**不使用任何数据库** —— 它唯一的持久状态是文件形态的 memory。
+把运行态状态持久化在一个插件自有的 SQLite 数据库（`$HERMES_HOME/clawchat.sqlite`，
+其中也保存激活 token）中，另有文件形态的 memory。
 
 终端用户侧，两者由同一个安装器驱动
 （`@newbase-clawchat/clawchat-cli`，通过 `install --target openclaw|hermes`），
@@ -50,10 +51,10 @@ Hermes Agent v0.12.0+ 进程内通过 `ctx.register_platform(...)` 注册一个
 | 安装位置             | 由 OpenClaw 加载的 npm 依赖                     | 拷贝进 `$HERMES_HOME/plugins/clawchat/`                    |
 | 配置存储             | `openclaw.json`（JSON5，camelCase）            | `config.yaml` `platforms.clawchat.extra.*`（snake_case）   |
 | 密钥存储             | 写在 `openclaw.json` 的 channel 段内           | **仅** `$HERMES_HOME/.env`（绝不进 `config.yaml`）         |
-| 运行态状态           | 插件自有 **SQLite** `clawchat.sqlite`          | **无**（不使用数据库）                                     |
+| 运行态状态           | 插件自有 **SQLite** `clawchat.sqlite`          | 插件自有 **SQLite** `clawchat.sqlite`（且保存 token）      |
 | 持久 memory          | 文件形态，位于 OpenClaw workspace 根目录下     | 文件形态，位于 `$HERMES_HOME/memories` 下                  |
-| 测试                 | `npm test`（Vitest）                           | `uv run pytest`（checkout 中不跟踪 `tests/`）              |
-| 版本标记             | `package.json`                                 | `plugin.yaml`（撰写时为 `0.14.0-15`）                      |
+| 测试                 | `npm test`（Vitest）                           | `uv run pytest`（pytest）                                  |
+| 版本标记             | `package.json`                                 | `plugin.yaml`（撰写时为 `0.14.0-17`）                      |
 
 ---
 
@@ -192,8 +193,11 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
   `connections`、`clawchat_messages`（消息幂等，按
   `(account_id, direction, kind, message_id)`）和 `tool_calls`。它绝不存储
   token 或端点 URL。
-- **Hermes** **没有数据库**。唯一的持久状态是位于 `$HERMES_HOME/memories` 下的
-  文件形态 memory。
+- **Hermes** 同样维护一个插件自有的 SQLite 数据库（`$HERMES_HOME/clawchat.sqlite`），
+  表与 OpenClaw 相同 —— `schema_migrations`、`activations`、`connections`、
+  `clawchat_messages`（消息幂等）和 `tool_calls`；与 OpenClaw 不同的是，其
+  `activations` 行还保存 access/refresh token。持久 memory 为文件形态，位于
+  `$HERMES_HOME/memories` 下。
 
 ### (e) 自回声与幂等
 - **OpenClaw：** 入站消息在派发前先在 SQLite 中认领（claim）（重复则跳过，
@@ -228,7 +232,7 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 - **仅 OpenClaw：** ClawChat 入站被强制为
   `session.dmScope: "per-account-channel-peer"`，使每个 账号+channel+对端 拥有
   各自的 session；群组回复派发把 OpenClaw 源回复强制为 `automatic`。两入口
-  setup/runtime 边界以及 SQLite 存储也是 OpenClaw 独有。
+  setup/runtime 边界是 OpenClaw 独有。
 
 ### 激活与安装 CLI
 
@@ -258,15 +262,11 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 | Agent id             | `agentId`                 | `agent_id` / `CLAWCHAT_AGENT_ID`              | JWT `aid` claim               |
 | User id              | `userId`                  | `user_id` / `CLAWCHAT_USER_ID`                | `""`                          |
 | Owner user id        | `ownerUserId`             | `owner_user_id` / `CLAWCHAT_OWNER_USER_ID`    | `""`                          |
-| 回复模式             | `replyMode`               | `reply_mode` / `CLAWCHAT_REPLY_MODE`          | `stream`                      |
 | 群组模式             | `groupMode`               | `group_mode` / `CLAWCHAT_GROUP_MODE`          | `all`                         |
 | 群组命令模式         | `groupCommandMode`        | `group_command_mode` / `CLAWCHAT_GROUP_COMMAND_MODE` | `owner`                |
-| 转发思考内容         | `forwardThinking`         | `show_think_output`                           | ⚠️ **`true`（OC）** vs **`false`（Hermes）** |
-| 转发工具调用         | `forwardToolCalls`        | `show_tools_output`                           | `false`                       |
+| 转发思考内容         | `forwardThinking`         | `display.platforms.clawchat.show_reasoning` † | ⚠️ **`true`（OC）** vs **`false`（Hermes）** |
+| 转发工具调用         | `forwardToolCalls`        | `display.platforms.clawchat.tool_progress` †  | `false`（OC）/ `off`（Hermes） |
 | 富交互               | `richInteractions`        | `enable_rich_interactions`                    | `false`                       |
-| 流式 flush 窗口      | `stream.flushIntervalMs`  | `stream.flush_interval_ms`                    | `250`                         |
-| 流式最小分片         | `stream.minChunkChars`    | `stream.min_chunk_chars`                      | `40`                          |
-| 流式最大缓冲         | `stream.maxBufferChars`   | `stream.max_buffer_chars`                     | `2000`                        |
 | 重连初始延迟         | `reconnect.initialDelay`  | `reconnect_initial_delay_ms`                  | `500`                         |
 | 重连最大延迟         | `reconnect.maxDelay`      | `reconnect_max_delay_ms`                      | `15000`                       |
 | 重连抖动             | `reconnect.jitterRatio`   | `reconnect_jitter_ratio`                      | `0.3`                         |
@@ -280,7 +280,11 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 
 > ⚠️ **默认值分歧：** 思考/推理内容的转发，OpenClaw 默认**开启**
 > （`forwardThinking: true`），而 Hermes 默认**关闭**
-> （`show_think_output: false`）。若想要开箱即用的一致冗长度，请显式设置它们。
+> （`show_reasoning: false`）。若想要开箱即用的一致冗长度，请显式设置它们。
+>
+> † 与 Hermes 列其余项（读自 `platforms.clawchat.extra.*`）不同，
+> `show_reasoning` 与 `tool_progress` 位于顶层 Hermes
+> `display.platforms.clawchat.*` 块下。
 
 ---
 
@@ -302,8 +306,8 @@ TypeScript 与 Python，模块命名高度对称。大致对应关系：
 5. **memory 契约。** `owner.md` / `users/` / `groups/` 布局、memory 与 metadata
    工具的切分、以及可写 metadata 字段是共享的（权威说明位于
    `clawchat-plugin-openclaw/docs/clawchat-memory.md`）。
-6. **连接默认值。** 重连 / 心跳 / ack / 流式默认值理应一致 —— 并留意 §5 中提到的
-   `forwardThinking` 与 `show_think_output` 默认值分歧。
+6. **连接默认值。** 重连 / 心跳 / ack 默认值理应一致 —— 并留意 §5 中提到的
+   `forwardThinking` 与 `show_reasoning` 默认值分歧。
 
 ---
 

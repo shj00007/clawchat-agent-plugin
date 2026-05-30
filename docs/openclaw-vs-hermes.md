@@ -29,7 +29,9 @@ SQLite database.
 distribution `clawchat-gateway`, Hermes plugin id `clawchat`). It registers a
 `clawchat` gateway platform via `ctx.register_platform(...)` inside a running
 Hermes Agent v0.12.0+ process, ships the same `clawchat_*` tools and a bundled
-skill, and keeps no database — its only durable state is file-backed memory.
+skill, and persists operational state in a plugin-owned SQLite database
+(`$HERMES_HOME/clawchat.sqlite`) — which also holds the activation tokens —
+alongside file-backed memory.
 
 Both are driven end-user-side by the same installer
 (`@newbase-clawchat/clawchat-cli`, via `install --target openclaw|hermes`) and
@@ -52,10 +54,10 @@ both onboard by exchanging a one-time code at `POST /v1/agents/connect`.
 | Install location     | npm dependency loaded by OpenClaw              | copied into `$HERMES_HOME/plugins/clawchat/`               |
 | Config store         | `openclaw.json` (JSON5, camelCase)             | `config.yaml` `platforms.clawchat.extra.*` (snake_case)    |
 | Secret store         | inside the `openclaw.json` channel section     | `$HERMES_HOME/.env` **only** (never `config.yaml`)         |
-| Operational state    | plugin-owned **SQLite** `clawchat.sqlite`      | **none** (no DB)                                           |
+| Operational state    | plugin-owned **SQLite** `clawchat.sqlite`      | plugin-owned **SQLite** `clawchat.sqlite` (also stores tokens) |
 | Durable memory       | file-backed under the OpenClaw workspace root  | file-backed under `$HERMES_HOME/memories`                  |
-| Tests                | `npm test` (Vitest)                            | `uv run pytest` (`tests/` is untracked in the checkout)    |
-| Version pin          | `package.json`                                 | `plugin.yaml` (`0.14.0-15` at time of writing)             |
+| Tests                | `npm test` (Vitest)                            | `uv run pytest`                                            |
+| Version pin          | `package.json`                                 | `plugin.yaml` (`0.14.0-17` at time of writing)             |
 
 ---
 
@@ -200,8 +202,11 @@ full key/env/default mapping (and one **default divergence** to watch).
   `connections`, `clawchat_messages` (message idempotency per
   `(account_id, direction, kind, message_id)`), and `tool_calls`. It never
   stores tokens or endpoint URLs.
-- **Hermes** has **no database**. The only durable state is file-backed memory
-  under `$HERMES_HOME/memories`.
+- **Hermes** keeps a plugin-owned SQLite DB (`$HERMES_HOME/clawchat.sqlite`)
+  with the same operational tables — `schema_migrations`, `activations`,
+  `connections`, `clawchat_messages` (message idempotency), and `tool_calls`.
+  Unlike OpenClaw, its `activations` row also stores the access/refresh tokens.
+  Durable memory is file-backed under `$HERMES_HOME/memories`.
 
 ### (e) Self-echo & idempotency
 - **OpenClaw:** inbound messages are claimed in SQLite before dispatch
@@ -239,8 +244,7 @@ full key/env/default mapping (and one **default divergence** to watch).
 - **OpenClaw-only:** ClawChat inbound is forced to
   `session.dmScope: "per-account-channel-peer"` so each account+channel+peer
   gets its own session; group reply dispatch forces OpenClaw source replies to
-  `automatic`. The dual setup/runtime entrypoint boundary and the SQLite store
-  are also OpenClaw-only.
+  `automatic`. The dual setup/runtime entrypoint boundary is also OpenClaw-only.
 
 ### Activation & install CLIs
 
@@ -270,15 +274,11 @@ Hermes keys are under `platforms.clawchat.extra.*` in `config.yaml` (or the
 | Agent id             | `agentId`                 | `agent_id` / `CLAWCHAT_AGENT_ID`              | JWT `aid` claim               |
 | User id              | `userId`                  | `user_id` / `CLAWCHAT_USER_ID`                | `""`                          |
 | Owner user id        | `ownerUserId`             | `owner_user_id` / `CLAWCHAT_OWNER_USER_ID`    | `""`                          |
-| Reply mode           | `replyMode`               | `reply_mode` / `CLAWCHAT_REPLY_MODE`          | `stream`                      |
 | Group mode           | `groupMode`               | `group_mode` / `CLAWCHAT_GROUP_MODE`          | `all`                         |
 | Group command mode   | `groupCommandMode`        | `group_command_mode` / `CLAWCHAT_GROUP_COMMAND_MODE` | `owner`                |
-| Forward thinking     | `forwardThinking`         | `show_think_output`                           | ⚠️ **`true` (OC)** vs **`false` (Hermes)** |
-| Forward tool calls   | `forwardToolCalls`        | `show_tools_output`                           | `false`                       |
+| Forward thinking     | `forwardThinking`         | `display.platforms.clawchat.show_reasoning` † | ⚠️ **`true` (OC)** vs **`false` (Hermes)** |
+| Forward tool calls   | `forwardToolCalls`        | `display.platforms.clawchat.tool_progress` †  | `false` (OC) / `off` (Hermes) |
 | Rich interactions    | `richInteractions`        | `enable_rich_interactions`                    | `false`                       |
-| Stream flush window   | `stream.flushIntervalMs`  | `stream.flush_interval_ms`                    | `250`                         |
-| Stream min chunk     | `stream.minChunkChars`    | `stream.min_chunk_chars`                      | `40`                          |
-| Stream max buffer    | `stream.maxBufferChars`   | `stream.max_buffer_chars`                     | `2000`                        |
 | Reconnect initial    | `reconnect.initialDelay`  | `reconnect_initial_delay_ms`                  | `500`                         |
 | Reconnect max        | `reconnect.maxDelay`      | `reconnect_max_delay_ms`                      | `15000`                       |
 | Reconnect jitter     | `reconnect.jitterRatio`   | `reconnect_jitter_ratio`                      | `0.3`                         |
@@ -292,8 +292,12 @@ Hermes keys are under `platforms.clawchat.extra.*` in `config.yaml` (or the
 
 > ⚠️ **Default divergence:** thinking/reasoning forwarding defaults **on** in
 > OpenClaw (`forwardThinking: true`) but **off** in Hermes
-> (`show_think_output: false`). If you want identical out-of-the-box verbosity,
+> (`show_reasoning: false`). If you want identical out-of-the-box verbosity,
 > set them explicitly.
+>
+> † Unlike the rest of the Hermes column (read from `platforms.clawchat.extra.*`),
+> `show_reasoning` and `tool_progress` live under the top-level Hermes
+> `display.platforms.clawchat.*` block.
 
 ---
 
@@ -316,8 +320,8 @@ not an accident. When you touch any of the following, change **both** plugins
 5. **Memory contract.** `owner.md` / `users/` / `groups/` layout, the
    memory-vs-metadata tool split, and allowed metadata fields are shared (the
    canonical write-up lives in `clawchat-plugin-openclaw/docs/clawchat-memory.md`).
-6. **Connection defaults.** Reconnect / heartbeat / ack / streaming defaults are
-   meant to match — and mind the `forwardThinking` vs `show_think_output`
+6. **Connection defaults.** Reconnect / heartbeat / ack defaults are
+   meant to match — and mind the `forwardThinking` vs `show_reasoning`
    default divergence noted in §5.
 
 ---

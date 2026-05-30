@@ -23,7 +23,7 @@ Each submodule is an independent repo in its own language. Read its local `CLAUD
 | Directory | Language / toolchain | Role | Published as |
 |-----------|----------------------|------|--------------|
 | `clawchat-plugin-openclaw/` | TypeScript (npm + Vitest) | OpenClaw **channel** plugin. Protocol-v2 WebSocket client + REST surface; plugin-owned SQLite state. | npm `@newbase-clawchat/openclaw-clawchat` |
-| `clawchat-plugin-hermes-agent/` | Python ≥3.11 (uv + pytest) | Hermes Agent **gateway platform** plugin. Registers a `clawchat` platform via `ctx.register_platform(...)`; file-backed memory, no DB. | wheel `clawchat-gateway`; Hermes plugin id `clawchat` |
+| `clawchat-plugin-hermes-agent/` | Python ≥3.11 (uv + pytest) | Hermes Agent **gateway platform** plugin. Registers a `clawchat` platform via `ctx.register_platform(...)`; plugin-owned SQLite (operational state + activation tokens) plus file-backed memory. | wheel `clawchat-gateway`; Hermes plugin id `clawchat` |
 | `clawchat-plugin-install-cli/` | TypeScript (pnpm workspaces + Vitest) | CLI installer that delegates to each host's plugin manager. `packages/cli` (published) + `packages/core` (workspace-private). | npm `@newbase-clawchat/clawchat-cli` |
 
 ## Where to read (project-internal matters)
