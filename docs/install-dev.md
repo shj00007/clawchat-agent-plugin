@@ -159,6 +159,19 @@ If `update` fails, report stderr verbatim and stop.
 
 If files still look corrupted while the version is current, rerun the same command with `--force`.
 
+### Hermes: `config.yaml` is read-only / "device or resource busy" (EBUSY)
+
+If install or activation fails with `Device or resource busy`, `EBUSY`, `[Errno 16]`,
+or an `os.replace` error on `config.yaml`, this is **not** something to work around in
+the agent. Hermes rewrites `$HERMES_HOME/config.yaml` atomically to persist plugin
+enablement and activation; if the deployment mounts that file **read-only** (e.g. a
+Kubernetes ConfigMap `subPath` mounted directly onto `config.yaml`), the rewrite
+fails. **Report this and stop** — do not chase mounts, edit files in place, or
+repoint `HERMES_HOME`. The fix is in the deployment: make `$HERMES_HOME/config.yaml`
+a **writable** file (mount the ConfigMap elsewhere and copy it in via an initContainer,
+`cp -n /seed/config.yaml "$HERMES_HOME/config.yaml"`, instead of mounting it directly).
+Once `config.yaml` is writable, re-run step 2.
+
 ## Update or repair later
 
 Use the same target that was installed. Set `TARGET` to exactly `openclaw` or `hermes`.
