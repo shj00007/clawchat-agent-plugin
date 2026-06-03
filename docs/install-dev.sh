@@ -57,13 +57,13 @@ For OpenClaw:
 OpenClaw plugin installation can be slow. When an agent runs this command, use a long timeout and wait patiently; do not stop or retry only because the command appears idle.
 
 ```bash
-npx -y @clawling/clawchat-plugin-install-cli@latest install --target openclaw --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
+npx -y @clawling/clawchat-plugin-install-cli@latest install --target openclaw@dev --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
 
 For Hermes Agent:
 
 ```bash
-npx -y @clawling/clawchat-plugin-install-cli@latest install --target hermes --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
+npx -y @clawling/clawchat-plugin-install-cli@latest install --target hermes@https://github.com/clawling/clawchat-plugin-hermes-agent.git#dev --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
 
 For OpenClaw, `install` delegates to `openclaw plugins install @clawling/clawchat-plugin-openclaw`. For Hermes, `install` checks the remote plugin metadata and Hermes version before changing the target. ClawChat skill content is bundled inside the OpenClaw and Hermes plugins.
