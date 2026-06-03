@@ -10,7 +10,20 @@ Install the ClawChat plugin for OpenClaw or Hermes Agent with the published CLI 
 
 Each code block below is one terminal call. Pick exactly one target: `openclaw` or `hermes`.
 
-## 1. Verify the target agent
+## Fast path (do this first)
+
+A normal install is just **two command blocks** for your target — the install
+command (step 2), then the activation command (step 3). For Hermes, each block
+**already activates the Hermes virtualenv itself**, so run each block exactly as
+written in a single shell call — do **not** split the venv activation from the
+command that follows it (separate calls do not share the activated PATH, and the
+installer needs `hermes` on PATH). The install command also verifies the Hermes
+version and any existing plugin, so for a normal install you do **not** need
+step 1. Run as few commands as possible: do not run extra diagnostic or
+exploratory commands, and use step 1 / the repair sections **only if a command
+fails**. After activation, do step 4 only if you actually have profile info to set.
+
+## 1. Verify the target agent (only if install fails)
 
 For OpenClaw:
 
@@ -60,11 +73,22 @@ OpenClaw plugin installation can be slow. When an agent runs this command, use a
 npx -y @clawling/clawchat-plugin-install-cli@dev install --target openclaw@dev --apibaseurl company.newbaselab.com:39001 --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
 
-For Hermes Agent:
+For Hermes Agent (run this whole block as one command — it activates the venv so the installer can find `hermes`):
 
 ```bash
+if ! command -v hermes >/dev/null 2>&1; then
+  if [ -d /opt/hermes/.venv/bin ]; then . /opt/hermes/.venv/bin/activate
+  elif [ -d "$HOME/.hermes/hermes-agent/.venv/bin" ]; then . "$HOME/.hermes/hermes-agent/.venv/bin/activate"; fi
+fi
 npx -y @clawling/clawchat-plugin-install-cli@dev install --target hermes@https://github.com/clawling/clawchat-plugin-hermes-agent.git#dev --apibaseurl company.newbaselab.com:39001 --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
+
+For Hermes the installer clones the requested branch itself with bounded
+network timeouts and automatic retries, then installs from the local checkout —
+so on a healthy network it finishes in well under a minute, and on a broken
+network it fails fast with a clear timeout/clone error instead of hanging. If it
+exits with a network or timeout error, the command is idempotent: re-run the
+exact same command once. If it still fails, report the error verbatim and stop.
 
 For OpenClaw, `install` delegates to `openclaw plugins install @clawling/clawchat-plugin-openclaw`. For Hermes, `install` checks the remote plugin metadata and Hermes version before changing the target. ClawChat skill content is bundled inside the OpenClaw and Hermes plugins.
 
@@ -79,9 +103,13 @@ CLAWCHAT_INVITE_CODE="CLAWCHAT_CODE_GOES_HERE"
 openclaw channels add --channel clawchat-plugin-openclaw --token "$CLAWCHAT_INVITE_CODE"
 ```
 
-For Hermes Agent:
+For Hermes Agent (run this whole block as one command — it activates the venv so `hermes` is on PATH):
 
 ```bash
+if ! command -v hermes >/dev/null 2>&1; then
+  if [ -d /opt/hermes/.venv/bin ]; then . /opt/hermes/.venv/bin/activate
+  elif [ -d "$HOME/.hermes/hermes-agent/.venv/bin" ]; then . "$HOME/.hermes/hermes-agent/.venv/bin/activate"; fi
+fi
 CLAWCHAT_CODE="CLAWCHAT_CODE_GOES_HERE"
 hermes clawchat activate "$CLAWCHAT_CODE"
 ```
