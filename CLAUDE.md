@@ -13,6 +13,7 @@ clawchat-agent-plugin/              # aggregator repo (git@github.com:shj00007/c
 ├── docs/                           # aggregator-level docs (ecosystem context; MAY mention msghub)
 │   ├── README.md / README.zh.md
 │   └── openclaw-vs-hermes.md/.zh.md  # side-by-side comparison of the two adapters
+├── e2e/                            # end-to-end env-startup runbooks for debugging / test cases (see e2e/README.md)
 ├── clawchat-plugin-openclaw/       # submodule
 ├── clawchat-plugin-hermes-agent/   # submodule
 └── clawchat-plugin-install-cli/    # submodule
@@ -29,6 +30,10 @@ Each submodule is an independent repo in its own language. Read its local `CLAUD
 ## Where to read (project-internal matters)
 
 For anything *inside* a submodule — its architecture, wire protocol, tool set, build/test commands, parity obligations, server-decoupling rules — read that submodule's own docs (start from its `AGENTS.md`/`README.md`, which point into its `docs/`). They are authoritative; don't rely on this aggregator file. Cross-cutting/ecosystem matters live in this repo's own `docs/`.
+
+## E2E testing
+
+Runbooks for **bringing up a real agent environment to debug or run test cases against** live in [`e2e/README.md`](e2e/README.md) (file index + shared conventions). These are env-startup guides, not smoke-test specs. **Before any e2e debugging / testing** — or when asked to "起一个 hermes / openclaw agent" — read that index and follow the relevant runbook (`e2e/hermes-agent-e2e.md` or `e2e/openclaw-agent-e2e.md`). Each spins up a throwaway agent pod in the joe dev cluster against a real LLM gateway; tear it down when done.
 
 ## Git structure
 
