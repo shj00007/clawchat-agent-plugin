@@ -37,12 +37,20 @@
      --data-raw '{"force": true}'
    ```
    从响应解析出连接码 `<code>`。
-3. **发 prompt 驱动安装 + 激活**（通过 `hermes chat -q`，agent loop 自己跑 npx 安装 +
-   `hermes clawchat activate <code>`）：
-   > Strictly follow the instruction from https://plugin.clawling.chat/clawchat/install-dev.md to install and activate clawchat plugin. The active code is `<code>`.
+3. **发 prompt 驱动安装 + 激活**（通过 `hermes chat -q`）。install-dev.md 的 Hermes 路径已是
+   **单条命令**：`npx … install --target hermes@… --activate <code>` 一次完成安装+激活（CLI 内联
+   调 `hermes clawchat activate`），agent 只需跑这一条：
+   > Strictly follow the instructions in the local file `/opt/data/install-dev.md` to install and activate the clawchat plugin for Hermes. The active code is `<code>`.
+
+   **有界 turn + 失败重试**：实测真实「安装→激活→连上」链路只需 ~20s，端到端成败几乎全取决于
+   弱模型/LLM 网关——后者偶发在「生成工具调用」时卡死，整个会话空转到超时、激活根本没发生。
+   故脚本给每次 agent turn 一个较短预算（≤70s），turn 中只读轮询 `activations` 表；一旦凭据落库
+   即收工。若 turn 卡死（进入 ~30s 仍零安装进展：连 npx/git 进程都没有）就提前止损，并在总预算内
+   **重发 prompt 重试**（连接码未被用过时可安全重试；install 幂等）。这把对 LLM 抖动的免疫力拉满。
 4. **拉起 gateway 并等连接** —— 激活只持久化凭据（`/opt/data/.env` 的 `CLAWCHAT_TOKEN` +
-   `config.yaml` 的 `platforms.clawchat`）；WebSocket 要靠长驻的 `hermes gateway` 进程才会建立。
-   脚本在凭据落盘后显式 `hermes gateway restart`（幂等），把日志写到 `/opt/data/gateway.log`。
+   `config.yaml` 的 `platforms.clawchat` + `clawchat.sqlite` 的 `activations`）；WebSocket 要靠长驻
+   的 `hermes gateway` 进程才会建立。脚本在**确认激活后**（agent turn 已收掉，避免并发重启打断激活/
+   抢 CPU）显式 `hermes gateway restart`（幂等），日志写到 `/opt/data/gateway.log`。
 
 ## 成功判定
 
@@ -56,7 +64,8 @@
 ## 超时 / 中断
 
 超过 3 分钟仍未连接 → **中断测试**：杀掉后台 agent turn，dump 诊断（`gateway.log` 末尾、
-`activations`/`connections` 表、agent 输出末尾），返回非 0 退出码。
+`activations`/`connections` 表、agent 输出末尾），返回非 0 退出码。其间若 agent turn 反复卡死，
+脚本会在预算内重试若干次（见步骤 3）；只有重试也用尽预算才判失败。
 
 ## 运行
 
@@ -83,7 +92,9 @@ kubectl -n joe-clawchat-dev delete -f e2e/usercase/.hermes-agent-smoke.gen.yaml
 - **连接码字段名**：脚本按 `.code / .connect_code / .data.code / .data.connectCode` 兜底解析；
   若接口返回结构不同，按实际响应调整脚本中的 `jq` 取值。
 - **镜像含 npx**：见前置条件；缺失则安装步骤无法进行。
-- **模型执行力**：`deepseek-v4-flash` 需可靠跟随 install-dev.md 的多步指令完成安装+激活 ——
-  这正是本用例要验证的点之一；若 agent 没按步骤跑，看 agent 输出末尾诊断。
+- **模型执行力**：`deepseek-v4-flash` 经内部网关偶发在「生成工具调用」时卡死（实测：会话停在
+  `preparing terminal…`、整轮空转、`activations=0`）。这是 LLM 基础设施抖动，非 CLI/文档问题；
+  脚本以「有界 turn + 卡死早杀 + 重发 prompt 重试」消化它（见步骤 3）。单条 `install --activate`
+  命令把激活收敛到一次工具调用，配合重试后实测 5/5 通过（约 48–158s）。
 - **连接信号采集**：依赖 `hermes gateway` 把日志写到 `/opt/data/gateway.log` 且 `sqlite3` 可用；
   首跑若两路信号都拿不到但人工确认已连上，按实际信号微调轮询条件。

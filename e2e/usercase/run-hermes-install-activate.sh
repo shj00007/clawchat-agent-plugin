@@ -84,6 +84,36 @@ running_pod() {
      -o jsonpath='{.items[0].metadata.name}' 2>/dev/null
 }
 
+# 激活完成？sqlite activations 表已落库一行（激活最后一步，提交后才可见）。
+# 退出码 0=已激活。一旦激活，凭据(.env CLAWCHAT_TOKEN + sqlite)已写好，可安全停掉
+# agent turn 并独占地拉起 gateway——不必空等弱模型把整个会话跑满。只读，不干扰激活。
+activated_check() {
+  kc exec -i "$POD" -- python3 - <<'PY' 2>/dev/null
+import os, sqlite3, sys
+db = "/opt/data/clawchat.sqlite"
+try:
+    if os.path.exists(db):
+        row = sqlite3.connect(db).execute("select 1 from activations limit 1").fetchone()
+        if row:
+            sys.exit(0)
+except Exception:
+    pass
+sys.exit(1)
+PY
+}
+
+# 安装是否「已完成或正在进行」？plugin 目录已存在，或还有 install-cli/npx 进程在跑。
+# 退出码 0=有进展。用于区分「模型卡在生成工具调用、压根没跑命令」（无进展）与「命令在
+# 正常执行（含冷网络重试克隆）」（有进展），从而只对前者提前止损、不误杀后者。
+install_active_or_done() {
+  # `[c]…` bracket trick: the regex matches a real npx/node install-cli process
+  # but NOT pgrep's own command line (which contains the literal "[c]lawchat…"),
+  # avoiding a false positive that would suppress the hung-kill below.
+  kc exec "$POD" -- bash -lc \
+    'test -d /opt/data/plugins/clawchat || pgrep -f "[c]lawchat-plugin-install-cli" >/dev/null' \
+    2>/dev/null
+}
+
 # 连接成功？日志有 handshake_ok 或 connections.state=ready。退出码 0=连上。
 # 镜像内没有 sqlite3 CLI（实测 exit 127），改用容器自带 python3 读库。
 connected_check() {
@@ -224,37 +254,70 @@ printf '%s' "$DOC_CONTENT" | kc exec -i "$POD" -- bash -lc "cat > '$DOC_LOCAL'" 
   || fail "写入 $DOC_LOCAL 失败"
 PROMPT="Strictly follow the instructions in the local file ${DOC_LOCAL} to install and activate the clawchat plugin for Hermes. Read it with: cat ${DOC_LOCAL}. The active code is ${CODE}. The Hermes gateway restart is automatic after activation — do NOT run 'hermes gateway restart' yourself."
 AGENT_OUT="$(mktemp)"
-# agent turn 预留出 ~25s 给随后的「拉起 gateway + 轮询握手」。
-AGENT_BUDGET=$(( $(remaining) - 25 )); (( AGENT_BUDGET < 30 )) && AGENT_BUDGET=$(remaining)
-log "   发 prompt 驱动 agent 安装+激活（agent 预算 ${AGENT_BUDGET}s，总剩余 $(remaining)s）"
-# hermes chat 一次性 agent turn：模型按 install-dev.md 跑 npx 安装 + `hermes clawchat activate <code>`。
-# 关键：让 agent turn 跑完再去碰 gateway。激活会先写 .env(CLAWCHAT_TOKEN) 再写 sqlite，
-# 若在 agent turn 进行中并发 `hermes gateway restart`，会打断激活（sqlite 没落库）并拖垮
-# 这台 1-2 核 pod 上的 agent。改成「先等 agent turn 结束，再起 gateway + 轮询」纯串行。
-# NOTE: `timeout` execs an external binary, so it must wrap `kubectl` directly —
-# NOT the `kc` shell function (`timeout kc …` fails instantly with "No such file
-# or directory", so the agent turn never runs: empty output, no activation).
-( timeout "$AGENT_BUDGET" kubectl -n "$NAMESPACE" exec "$POD" -- bash -lc \
-    "source /opt/hermes/.venv/bin/activate 2>/dev/null; hermes chat -q $(printf '%q' "$PROMPT")" \
-    >"$AGENT_OUT" 2>&1 ) &
-AGENT_PID=$!
 
-# ── 4. 等 agent turn 结束 → 拉起 gateway → 轮询「连接上」──────────────────────
-# 激活本身会调度一次 detached `hermes gateway restart`；这里在 agent 跑完后再显式
-# 兜底起一个（幂等），确保 WS 真正建立且日志可被 grep。
-SUCCESS=0
-log "④ 等 agent turn 结束（不并发干扰激活）..."
-wait "$AGENT_PID" 2>/dev/null
-log "   agent turn 结束 → 兜底拉起 gateway → 轮询 WebSocket 握手（总剩余 $(remaining)s）"
-kc exec "$POD" -- bash -lc \
-  'source /opt/hermes/.venv/bin/activate 2>/dev/null; \
-   pgrep -f "hermes gateway" >/dev/null || nohup hermes gateway restart >>/opt/data/gateway.log 2>&1 &' \
-  >/dev/null 2>&1 || true
-while (( $(remaining) > 0 )); do
-  # 连接成功信号：日志 handshake_ok 或 connections.state=ready。
-  if connected_check; then SUCCESS=1; break; fi
-  sleep 3
+# ── 4. 安装 + 激活：有界 agent turn + 失败重试 ───────────────────────────────
+# 实测：真实「安装→激活→连上」链路本身只需 ~20s（npx 安装 ~12s、CLI 内联 activate
+# ~1s、激活自调度的 detached gateway restart ~6s 后握手）。端到端耗时与成败几乎全取决
+# 于 LLM 的 `hermes chat` 这一步——弱模型/网关偶发在「生成工具调用」时卡死，整个会话空
+# 转直到被 timeout 杀掉，激活根本没发生（activations=0）。单 turn 跑满 153s 预算的就是
+# 这种卡死，而非真在干活。
+#
+# 对策（呼应需求「网络不通缩减超时进行重拾」）：给每次 agent turn 一个较短预算；turn 进行
+# 中只读轮询 activated_check（凭据落库即收工，不空等会话）。若本次 turn 结束仍未激活（多半
+# 模型卡死），且时间还够，就重发 prompt 再来一次。连接码一次性，但「未激活」=码没被用过，
+# 可安全重试；install 幂等（已装即跳过），CLI 内联 activate 再跑一次即可。仅在确认已激活后
+# 才独占拉起 gateway（沿用 ce3825e：gateway 必须在 agent turn 结束后起，避免并发重启打断
+# 激活 / 抢占 1-2 核 pod 的 CPU）。
+SUCCESS=0; ACTIVATED=0; ATTEMPT=0
+# 卡死早杀阈值：进入 turn 这么多秒后若仍「零安装进展」，判定模型卡在生成工具调用，提前止损
+# 重试。注意 install_active_or_done 在 npx 一启动就为真（npx argv 里就含包名，连冷网络克隆
+# 重试期间也算「有进展」），所以「无进展」窗口仅限模型「发命令前」的思考期；30s 给足余量又
+# 不误杀正在干活的 turn。压低它能在预算内塞下更多次重试，从容应对连续多次模型卡死。
+HUNG_KILL_AFTER=30
+while (( ACTIVATED == 0 )) && (( $(remaining) > 35 )); do
+  ATTEMPT=$((ATTEMPT + 1))
+  # 单次 turn 预算：留 ~20s 给随后 gateway+握手；封顶 70s。卡死的 turn 由 HUNG_KILL_AFTER
+  # 在 ~35s 提前收掉，好把预算让给重试。
+  TURN_BUDGET=$(( $(remaining) - 20 )); (( TURN_BUDGET > 70 )) && TURN_BUDGET=70
+  log "④.${ATTEMPT} agent turn（预算 ${TURN_BUDGET}s，总剩余 $(remaining)s）：只读轮询激活完成..."
+  # NOTE: `timeout` execs an external binary, so it must wrap `kubectl` directly —
+  # NOT the `kc` shell function (`timeout kc …` fails instantly with "No such file
+  # or directory", so the agent turn never runs: empty output, no activation).
+  ( timeout "$TURN_BUDGET" kubectl -n "$NAMESPACE" exec "$POD" -- bash -lc \
+      "source /opt/hermes/.venv/bin/activate 2>/dev/null; hermes chat -q $(printf '%q' "$PROMPT")" \
+      >"$AGENT_OUT" 2>&1 ) &
+  AGENT_PID=$!
+  tstart=$(now)
+  while kill -0 "$AGENT_PID" 2>/dev/null && (( $(remaining) > 0 )); do
+    if connected_check; then SUCCESS=1; ACTIVATED=1; break; fi   # 已连上 → 直接成功
+    if activated_check; then ACTIVATED=1; break; fi              # 凭据已落库 → 收工
+    # 卡死早杀：超过阈值仍无任何安装进展 → 模型卡在生成工具调用，止损重试。
+    if (( $(now) - tstart >= HUNG_KILL_AFTER )) && ! install_active_or_done; then
+      log "   ④.${ATTEMPT} ${HUNG_KILL_AFTER}s 无安装进展（疑似模型卡在生成工具调用）→ 提前止损"
+      break
+    fi
+    sleep 3
+  done
+  # 收掉本次 turn（已激活不必再等；卡死/超时也要止损）。
+  kill "$AGENT_PID" 2>/dev/null || true
+  wait "$AGENT_PID" 2>/dev/null
+  # turn 结束后再确认一次，捕捉「刚好在轮询间隙完成」的激活，避免误重试而用掉刚用的码。
+  if (( ACTIVATED == 0 )) && activated_check; then ACTIVATED=1; fi
+  (( ACTIVATED == 1 )) && break
+  log "   第 ${ATTEMPT} 次 agent turn 未完成激活（多半模型卡顿）→ 重试（总剩余 $(remaining)s）"
 done
+
+if (( SUCCESS == 0 )); then
+  log "   激活完成(activated=${ACTIVATED}) → 独占拉起 gateway → 轮询 WebSocket 握手（总剩余 $(remaining)s）"
+  kc exec "$POD" -- bash -lc \
+    'source /opt/hermes/.venv/bin/activate 2>/dev/null; \
+     pgrep -f "hermes gateway" >/dev/null || nohup hermes gateway restart >>/opt/data/gateway.log 2>&1 &' \
+    >/dev/null 2>&1 || true
+  while (( $(remaining) > 0 )); do
+    if connected_check; then SUCCESS=1; break; fi
+    sleep 3
+  done
+fi
 
 ELAPSED=$(( TIMEOUT_SECONDS - $(remaining) ))
 if (( SUCCESS == 1 )); then
