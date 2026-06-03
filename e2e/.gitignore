@@ -1,0 +1,4 @@
+# 本地凭据，切勿提交
+.env
+# 脚本生成的临时 manifest
+*.gen.yaml

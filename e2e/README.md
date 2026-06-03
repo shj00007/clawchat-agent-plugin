@@ -17,6 +17,12 @@
 | [`hermes-agent-e2e.md`](hermes-agent-e2e.md) | `clawchat-plugin-hermes-agent`（Python / Hermes） | 在 joe 集群起 `clawchat/hermes-agent` 容器（uid 10000），用 `hermes chat -q` 非交互发 prompt。 |
 | [`openclaw-agent-e2e.md`](openclaw-agent-e2e.md) | `clawchat-plugin-openclaw`（TS / OpenClaw） | 在 joe 集群起 `clawchat/openclaw` 容器（node, uid 1000），用 `openclaw.mjs agent` 走 agent loop（`infer model run` 仅作裸 LLM 自检）。 |
 
+## 测试用例
+
+具体的端到端测试用例（自动起环境 + 跑完整业务链路 + 给 PASS/FAIL）放在 [`usercase/`](usercase/README.md)。
+例如 `usercase/hermes-install-activate.md`：起 hermes 环境 → 申请连接码 → 让 agent 按 `install-dev.md`
+安装并激活 clawchat 插件 → 连上 ClawChat，安装+连接 3 分钟硬超时。凭据放 `e2e/.env`（见 [`.env.example`](.env.example)，已 .gitignore）。
+
 ## 公共要点
 
 - **kubeconfig**：所有 `kubectl` 命令都走 dev 集群凭据 `~/.kube/dev.config`，先 `export KUBECONFIG=~/.kube/dev.config`。
