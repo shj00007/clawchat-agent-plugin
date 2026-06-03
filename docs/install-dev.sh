@@ -57,13 +57,13 @@ For OpenClaw:
 OpenClaw plugin installation can be slow. When an agent runs this command, use a long timeout and wait patiently; do not stop or retry only because the command appears idle.
 
 ```bash
-npx -y @clawling/clawchat-plugin-install-cli@latest install --target openclaw@dev --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
+npx -y @clawling/clawchat-plugin-install-cli@latest install --target openclaw@dev --apibaseurl company.newbaselab.com:39001 --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
 
 For Hermes Agent:
 
 ```bash
-npx -y @clawling/clawchat-plugin-install-cli@latest install --target hermes@https://github.com/clawling/clawchat-plugin-hermes-agent.git#dev --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
+npx -y @clawling/clawchat-plugin-install-cli@latest install --target hermes@https://github.com/clawling/clawchat-plugin-hermes-agent.git#dev --apibaseurl company.newbaselab.com:39001 --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
 
 For OpenClaw, `install` delegates to `openclaw plugins install @clawling/clawchat-plugin-openclaw`. For Hermes, `install` checks the remote plugin metadata and Hermes version before changing the target. ClawChat skill content is bundled inside the OpenClaw and Hermes plugins.
@@ -114,12 +114,12 @@ Use the same target that was installed. Set `TARGET` to exactly `openclaw` or `h
 
 ```bash
 TARGET="openclaw"
-npx -y @clawling/clawchat-plugin-install-cli@latest update --target "$TARGET" --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
+npx -y @clawling/clawchat-plugin-install-cli@latest update --target "$TARGET" --apibaseurl company.newbaselab.com:39001 --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
 
 If local ClawChat plugin files look corrupted while the version is already current, rerun the same update command with `--force` to reinstall the plugin:
 
 ```bash
 TARGET="openclaw"
-npx -y @clawling/clawchat-plugin-install-cli@latest update --target "$TARGET" --force --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
+npx -y @clawling/clawchat-plugin-install-cli@latest update --target "$TARGET" --force --apibaseurl company.newbaselab.com:39001 --wsbaseurl company.newbaselab.com:39002 --mediabaseurl company.newbaselab.com:39003
 ```
