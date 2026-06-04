@@ -41,7 +41,9 @@ eval KUBECONFIG_PATH="${KUBECONFIG_PATH:-~/.kube/dev.config}"
 export KUBECONFIG="$KUBECONFIG_PATH"
 
 APP=hermes-agent-smoke
-MANIFEST="$HERE/.hermes-agent-smoke.gen.yaml"
+
+# 复用通用启动（manifest/secret/apply/teardown 的唯一来源）
+source "$E2E_DIR/lib/hermes-env.sh"
 
 command -v jq   >/dev/null || { echo "✗ 需要 jq"   >&2; exit 2; }
 command -v curl >/dev/null || { echo "✗ 需要 curl" >&2; exit 2; }
@@ -138,15 +140,9 @@ sys.exit(1)
 PY
 }
 
-# 彻底删除本用例的全部资源（含 PVC）并等 Pod 真正消失。删 PVC 是关键：config.yaml 现在是
-# initContainer 拷进 PVC 的可写文件，PVC 还会累积已装插件 / clawchat.sqlite / gateway.log /
-# .env 等残留——不删 PVC，下一轮 apply 会复用旧卷（旧 config + 已激活的插件），导致重跑出现
-# 假结果或脏状态。两处调用：①启动前清掉上一轮残留，确保全新冷安装；②KEEP=0 跑完清理。
+# 彻底删除本用例全部资源（含 PVC）并等 Pod 真正消失。删除动作交给通用 lib（唯一来源）。
 teardown() {
-  kubectl delete -f "$MANIFEST" >/dev/null 2>&1 || true   # manifest 存在时一把删 deploy+cm+pvc
-  kc delete deploy "$APP" configmap "${APP}-config" secret "${APP}-llm" >/dev/null 2>&1 || true
-  kc delete pvc "${APP}-data" >/dev/null 2>&1 || true      # 显式删 PVC，回收本地盘残留
-  # 等旧 Pod / PVC 退出，避免下一轮撞到 Terminating 的旧资源。
+  hermes_env_down >/dev/null 2>&1 || true
   local waited=0
   while [[ -n "$(kc get pods -l app="$APP" -o name 2>/dev/null)" ]] && (( waited < 60 )); do
     sleep 2; waited=$((waited + 2))
@@ -154,85 +150,12 @@ teardown() {
 }
 
 # ── 1. 起 hermes e2e 环境 ─────────────────────────────────────────────────
-# manifest 与 ../hermes-agent-e2e.md 一致：local-path PVC + securityContext(10000)
-# + sleep infinity。LLM 走内部 clawling 网关；此处不放 clawchat platform（靠激活写入）。
-write_manifest() {
-  cat >"$MANIFEST" <<YAML
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: { name: ${APP}-data, namespace: ${NAMESPACE}, labels: { app: ${APP} } }
-spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: local-path
-  resources: { requests: { storage: 2Gi } }
----
-apiVersion: v1
-kind: ConfigMap
-metadata: { name: ${APP}-config, namespace: ${NAMESPACE}, labels: { app: ${APP} } }
-data:
-  config.yaml: |
-    model:
-      provider: "custom"
-      default: "deepseek-v4-flash"
-      base_url: "http://api.clawling.io/v1"
----
-apiVersion: apps/v1
-kind: Deployment
-metadata: { name: ${APP}, namespace: ${NAMESPACE}, labels: { app: ${APP} } }
-spec:
-  replicas: 1
-  selector: { matchLabels: { app: ${APP} } }
-  template:
-    metadata: { labels: { app: ${APP} } }
-    spec:
-      securityContext: { runAsUser: 10000, runAsGroup: 10000, fsGroup: 10000 }
-      # config.yaml must be a normal WRITABLE file in the PVC: hermes rewrites it
-      # on plugin --enable and on activation (atomic os.replace). Bind-mounting it
-      # as a ConfigMap subPath makes those writes fail with EBUSY ("Device or
-      # resource busy"), so we seed it into the PVC via an initContainer instead.
-      initContainers:
-        - name: seed-config
-          image: 192.168.2.129:5000/clawchat/hermes-agent:${HERMES_IMAGE_TAG}
-          command: ["sh", "-c", "cp -n /seed/config.yaml /opt/data/config.yaml 2>/dev/null || true"]
-          volumeMounts:
-            - { name: data,   mountPath: /opt/data }
-            - { name: config, mountPath: /seed }
-      containers:
-        - name: hermes-agent
-          image: 192.168.2.129:5000/clawchat/hermes-agent:${HERMES_IMAGE_TAG}
-          args: ["sleep", "infinity"]
-          env:
-            - { name: HERMES_HOME, value: /opt/data }
-            - name: OPENAI_API_KEY        # custom/clawling 网关 provider 从这里读 key
-              valueFrom: { secretKeyRef: { name: ${APP}-llm, key: api_key } }
-            - name: OPENROUTER_API_KEY    # 部分回退路径会读它，塞同一个 key
-              valueFrom: { secretKeyRef: { name: ${APP}-llm, key: api_key } }
-          volumeMounts:
-            - { name: data,   mountPath: /opt/data }
-          resources:
-            requests: { cpu: "250m", memory: "256Mi" }
-            limits:   { cpu: "2",    memory: "1Gi" }   # npx/git/python + the poll loop share this core; 2 avoids starving the agent turn
-      volumes:
-        - name: data
-          persistentVolumeClaim: { claimName: ${APP}-data }
-        - name: config
-          configMap: { name: ${APP}-config }
-YAML
-}
-
 log "① 起 hermes e2e 环境（ns=$NAMESPACE, tag=$HERMES_IMAGE_TAG）"
-write_manifest
-# 先清掉上一轮可能残留的资源（尤其 PVC）：保证每次都是全新冷安装，不复用旧 config / 旧插件。
 log "   清理上一轮残留（含 PVC）以确保全新环境..."
 teardown
-# LLM key 走 Secret（不落进磁盘上的 manifest）。
-kc create secret generic "${APP}-llm" --from-literal=api_key="$LLM_API_KEY" \
-   --dry-run=client -o yaml | kubectl -n "$NAMESPACE" apply -f - >/dev/null \
-   || fail "创建 LLM Secret 失败"
-kubectl apply -f "$MANIFEST" >/dev/null
-kc rollout status deploy/"$APP" --timeout=180s || fail "环境未就绪（镜像拉取/调度失败？）"
-POD="$(running_pod)"; [[ -n "$POD" ]] || fail "找不到 Running 的 pod"
-log "   pod=$POD Running"
+hermes_env_up || fail "起 hermes e2e 环境失败（hermes_env_up）"
+POD="$(hermes_env_pod)" || fail "找不到 Running pod"
+log "   ✓ 环境就绪：POD=$POD"
 
 # 前置检查：agent 安装插件靠 npx（install-cli 经 npx 分发），镜像内必须有 node/npx。
 kc exec "$POD" -- bash -lc 'command -v npx >/dev/null' \
@@ -352,7 +275,7 @@ if [[ "$KEEP" == "0" ]]; then
   log "清理环境（KEEP=0，含 PVC 残留）"
   teardown
 else
-  log "环境保留（KEEP=1）。彻底销毁（含 PVC）：kubectl -n $NAMESPACE delete deploy/$APP cm/${APP}-config secret/${APP}-llm pvc/${APP}-data"
+  log "环境保留（KEEP=1）。彻底销毁（含 PVC）：$E2E_DIR/lib/hermes-env.sh down"
 fi
 rm -f "$AGENT_OUT"
 exit "$RC"
