@@ -36,7 +36,7 @@
 
 ---
 
-## 两个必须知道的坑
+## 三个必须知道的坑
 
 1. **必须加 `securityContext`（uid/gid/fsGroup = 10000）。**
    镜像 entrypoint 只在「首次以 root 启动」时对数据卷做 `chown -R`；容器一旦**重启**就跳过
@@ -48,161 +48,49 @@
 2. **`deepseek-v4-flash` 是推理模型。** reasoning token 先消耗额度，`max_tokens` 给太小
    （如 10）只会返回空内容。裸调 API 验证时给足 token（≥200）。`hermes chat` 自己会给够，无需关心。
 
+3. **LLM key 必须落到 `$HERMES_HOME/.env`，光靠 Pod 环境变量不够。**
+   `hermes chat -q` 是 `kubectl exec` 起的新进程、继承 Pod env，能读到 `OPENAI_API_KEY`，所以
+   永远「正常」；但 **clawchat channel 跑的是常驻 gateway daemon**，它经 clawchat 激活 /
+   `gateway restart` 后只从 `$HERMES_HOME/.env` 加载 provider key——`clawchat_gateway/restart.py`
+   继承的是调用方 `os.environ`，而激活只往 `.env` 写 `CLAWCHAT_*`、不写 provider key，于是 gateway
+   并不可靠地继承 Pod env。config 又是 `provider: custom` 且**没有内联 `api_key`**，key 只在 Pod env
+   里时 gateway 调网关就是空 key → **从 channel 发消息返回 `401 Invalid API key`，而 `chat -q`
+   一切正常**（极具迷惑性）。所以 lib（[`lib/hermes-env.sh`](lib/hermes-env.sh)）的 manifest 里 initContainer 会把 key 一并 seed 进 `/opt/data/.env`。
+   排错时确认：`tr '\0' '\n' < /proc/$(pgrep -f 'hermes gateway')/environ | grep OPENAI_API_KEY`。
+
 ---
 
 ## 启动步骤
 
-### 1. 准备 manifest
-
-把下面内容存成 `hermes-agent-smoke.yaml`（把 `<LLM_KEY>` 换成真实 key，必要时改 `<TAG>` / 模型 id）：
-
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: hermes-agent-smoke-data
-  namespace: joe-clawchat-dev
-  labels:
-    app: hermes-agent-smoke
-spec:
-  accessModes: ["ReadWriteOnce"]
-  storageClassName: local-path        # 节点本地盘动态供给（local-path-provisioner）
-  resources:
-    requests:
-      storage: 2Gi
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: hermes-agent-smoke-llm
-  namespace: joe-clawchat-dev
-type: Opaque
-stringData:
-  api_key: "<LLM_KEY>"            # 形如 sk-crawling-…
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hermes-agent-smoke-config
-  namespace: joe-clawchat-dev
-data:
-  config.yaml: |
-    # 冒烟配置：内部 clawling OpenAI 兼容网关。
-    # 不放 ClawChat platform/token —— gateway 离线，直到后续走 connect-code 激活。
-    model:
-      provider: "custom"
-      default: "deepseek-v4-flash"
-      base_url: "http://api.clawling.io/v1"
-      # api_key 通过 OPENAI_API_KEY 环境变量注入（挂自 Secret）
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hermes-agent-smoke
-  namespace: joe-clawchat-dev
-  labels:
-    app: hermes-agent-smoke
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: hermes-agent-smoke
-  template:
-    metadata:
-      labels:
-        app: hermes-agent-smoke
-    spec:
-      securityContext:          # 必须：否则重启后 CrashLoopBackOff（见上文坑 1）
-        runAsUser: 10000
-        runAsGroup: 10000
-        fsGroup: 10000
-      # config.yaml 必须是 PVC 里的普通【可写】文件：hermes 在 plugin --enable 和激活时会原子
-      # 改写它（os.replace）。若把 ConfigMap 用 subPath 直接挂到 /opt/data/config.yaml 上，该文件
-      # 只读，写入会 EBUSY（"Device or resource busy"）失败 → 安装/激活报错。所以把 ConfigMap 挂
-      # 到 /seed，再用 initContainer 拷进 PVC（整个 /opt/data 才是可写卷，不要对 config.yaml 用 subPath）。
-      initContainers:
-        - name: seed-config
-          image: 192.168.2.129:5000/clawchat/hermes-agent:v2026.5.27
-          command: ["sh", "-c", "cp -n /seed/config.yaml /opt/data/config.yaml 2>/dev/null || true"]
-          volumeMounts:
-            - name: data
-              mountPath: /opt/data
-            - name: config
-              mountPath: /seed
-      containers:
-        - name: hermes-agent
-          image: 192.168.2.129:5000/clawchat/hermes-agent:v2026.5.27
-          # 保持 Pod Running；`hermes` 无参会等 TTY，在 k8s 里会退出。
-          args: ["sleep", "infinity"]
-          env:
-            - name: HERMES_HOME
-              value: /opt/data
-            - name: OPENAI_API_KEY        # custom/OpenAI 兼容 provider 从这里读 key
-              valueFrom:
-                secretKeyRef:
-                  name: hermes-agent-smoke-llm
-                  key: api_key
-            - name: OPENROUTER_API_KEY     # 部分回退路径会读它，一并塞同一个 key
-              valueFrom:
-                secretKeyRef:
-                  name: hermes-agent-smoke-llm
-                  key: api_key
-          volumeMounts:
-            - name: data
-              mountPath: /opt/data          # 整目录可写；config.yaml 由 initContainer 拷进来，不用 subPath
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "1"
-              memory: "1Gi"
-      volumes:
-        - name: data
-          persistentVolumeClaim:           # local-path PVC，跨重启留存；停止时记得清掉（见「停止/清理」）
-            claimName: hermes-agent-smoke-data
-        - name: config
-          configMap:
-            name: hermes-agent-smoke-config
-```
-
-### 2. apply 并等待就绪
+环境的唯一来源是 [`lib/hermes-env.sh`](lib/hermes-env.sh)（manifest 内嵌其中，含三个坑的修复）。
+先把凭据填进 `e2e/.env`（见 [`.env.example`](.env.example)）：至少 `LLM_API_KEY`（clawling 网关
+key），其余 `NAMESPACE` / `HERMES_IMAGE_TAG` / `KUBECONFIG_PATH` 有默认值。然后：
 
 ```bash
-kubectl apply -f hermes-agent-smoke.yaml
-kubectl -n joe-clawchat-dev rollout status deploy/hermes-agent-smoke --timeout=180s
-kubectl -n joe-clawchat-dev get pods -l app=hermes-agent-smoke
+e2e/lib/hermes-env.sh up        # 建 Secret + apply manifest + 等 rollout（幂等）
+e2e/lib/hermes-env.sh status    # 期望 pod 1/1 Running、RESTARTS 0、PVC Bound
 ```
 
-期望：Pod `1/1 Running`，`RESTARTS 0`。
+> kubectl 凭据由 lib 自动 `export KUBECONFIG`（默认 `~/.kube/dev.config`，可在 `.env` 用
+> `KUBECONFIG_PATH` 覆盖）。列 registry 可用 tag：
+> `curl -s http://192.168.2.129:5000/v2/clawchat/hermes-agent/tags/list`
 
 ---
 
 ## 发 prompt（核心用法）
 
-通过 `kubectl exec` 让容器里的 `hermes chat -q` 跑一轮非交互对话：
-
 ```bash
-POD=$(kubectl -n joe-clawchat-dev get pod -l app=hermes-agent-smoke \
-        --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}')
-
-kubectl -n joe-clawchat-dev exec "$POD" -- bash -lc \
-  'source /opt/hermes/.venv/bin/activate; hermes chat -q "你的 prompt 写这里"'
+e2e/lib/hermes-env.sh chat "你的 prompt 写这里"
+e2e/lib/hermes-env.sh health          # 自检：应回 HERMES-OK
 ```
 
-- 每次 `-q` 是一轮独立对话；想接着上一轮可加 `hermes --resume <session_id>`（命令输出会给）。
-- 想进交互式：`kubectl -n joe-clawchat-dev exec -it "$POD" -- bash`，再 `source .venv/bin/activate && hermes`。
-
-健康自检（确认能接通模型）：
-
-```bash
-kubectl -n joe-clawchat-dev exec "$POD" -- bash -lc \
-  'source /opt/hermes/.venv/bin/activate; hermes chat -q "reply with exactly: HERMES-OK"'
-```
+需要进容器排查：`e2e/lib/hermes-env.sh exec -- bash`（或 `exec -- <cmd>` 跑单条命令）。
 
 ---
 
 ## 排错
+
+> 下列命令需 KUBECONFIG=~/.kube/dev.config；或先用 e2e/lib/hermes-env.sh exec -- <cmd> 进容器。
 
 ```bash
 # 看日志（崩溃时加 --previous 看上一个容器）
@@ -215,6 +103,10 @@ kubectl -n joe-clawchat-dev describe pod -l app=hermes-agent-smoke | sed -n '/Ev
 
 - `PermissionError … /opt/data/skills/.bundled_manifest` → 漏了 `securityContext`（坑 1）。
 - 裸调 API 返回空内容 → `max_tokens` 太小，推理模型（坑 2）。
+- **从 clawchat channel 发消息返回 `401 Invalid API key`，但 `hermes chat -q` 正常** → gateway
+  daemon 的环境里没有 provider key（坑 3）。查 `tr '\0' '\n' < /proc/$(pgrep -f 'hermes gateway')/environ | grep OPENAI_API_KEY`；
+  补救：`grep -q '^OPENAI_API_KEY=' /opt/data/.env || echo "OPENAI_API_KEY=<LLM_KEY>" >> /opt/data/.env`，
+  再 `hermes gateway restart`（新版 manifest 的 initContainer 已自动 seed，不该再遇到）。
 - 直接验证网关/模型可用性：
   ```bash
   curl -s http://api.clawling.io/v1/models -H "Authorization: Bearer <LLM_KEY>"
@@ -224,46 +116,13 @@ kubectl -n joe-clawchat-dev describe pod -l app=hermes-agent-smoke | sed -n '/Ev
 
 ## 停止 / 清理
 
-这是临时冒烟环境，**测完务必停掉**。按需选其一：
-
-### A. 临时暂停（保留配置，之后能快速恢复）
-
-把副本缩到 0：Pod 销毁，但 Deployment / ConfigMap / Secret 保留。
-
-**用了 PVC 后，暂停时必须把 PVC 一并删掉**：local-path PVC 用 `WaitForFirstConsumer` 绑死在某个节点上，
-留着它既占本地盘，又会让恢复后的 Pod 被钉回原节点（节点不可调度时直接 `Pending`）。
-冒烟数据无保留价值，暂停即清，恢复时由本文 manifest 重新动态供给一个干净 PVC。
+这是临时环境，测完务必停掉：
 
 ```bash
-kubectl -n joe-clawchat-dev scale deploy/hermes-agent-smoke --replicas=0
-kubectl -n joe-clawchat-dev delete pvc/hermes-agent-smoke-data          # 清掉本地盘 PVC
-# 恢复：先重建 PVC（重新 apply manifest 即可，幂等），再拉起副本
-kubectl apply -f hermes-agent-smoke.yaml
-kubectl -n joe-clawchat-dev scale deploy/hermes-agent-smoke --replicas=1
-kubectl -n joe-clawchat-dev rollout status deploy/hermes-agent-smoke --timeout=180s
+e2e/lib/hermes-env.sh pause     # 暂停：scale 0 + 删 PVC（之后 resume 重建干净 PVC 恢复）
+e2e/lib/hermes-env.sh resume    # 恢复（= up）
+e2e/lib/hermes-env.sh down      # 彻底销毁四件套（含 PVC），集群不留痕
 ```
 
-> 注意：删 PVC 会清掉 `/opt/data`（会话/日志/.env/已装插件/`clawchat.sqlite`，**以及 initContainer 从 ConfigMap 拷入的 `config.yaml`**），恢复后是全新状态；但 LLM 配置源（ConfigMap/Secret）不变，恢复时 initContainer 会重新拷一份干净的 `config.yaml`。反过来：**若保留 PVC，改了 ConfigMap 也不会生效**——`cp -n` 不覆盖已存在的文件，要让新配置生效必须删掉 PVC（或卷里那份 `config.yaml`）。
-
-### B. 彻底销毁（默认推荐，测完即弃）
-
-删掉本流程创建的全部四件套（含 PVC），集群里不留任何痕迹：
-
-```bash
-kubectl -n joe-clawchat-dev delete deploy/hermes-agent-smoke \
-  cm/hermes-agent-smoke-config secret/hermes-agent-smoke-llm \
-  pvc/hermes-agent-smoke-data
-```
-
-或者，如果你是用本文那份 `hermes-agent-smoke.yaml` 起的，直接按文件反向删除最稳妥（不会漏资源）：
-
-```bash
-kubectl delete -f hermes-agent-smoke.yaml
-```
-
-删除后 PVC 连同本地盘数据一并回收，不留任何状态。确认已清干净（注意 PVC 不在 `all` 里，单列）：
-
-```bash
-kubectl -n joe-clawchat-dev get all,cm,secret,pvc -l app=hermes-agent-smoke
-# 期望：No resources found
-```
+> 用了 local-path PVC：pause/down 都会删掉它（绑死节点、无保留价值）。down 后用
+> `e2e/lib/hermes-env.sh status` 确认 `No resources found`。
