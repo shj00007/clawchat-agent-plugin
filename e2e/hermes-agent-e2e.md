@@ -116,6 +116,19 @@ spec:
         runAsUser: 10000
         runAsGroup: 10000
         fsGroup: 10000
+      # config.yaml 必须是 PVC 里的普通【可写】文件：hermes 在 plugin --enable 和激活时会原子
+      # 改写它（os.replace）。若把 ConfigMap 用 subPath 直接挂到 /opt/data/config.yaml 上，该文件
+      # 只读，写入会 EBUSY（"Device or resource busy"）失败 → 安装/激活报错。所以把 ConfigMap 挂
+      # 到 /seed，再用 initContainer 拷进 PVC（整个 /opt/data 才是可写卷，不要对 config.yaml 用 subPath）。
+      initContainers:
+        - name: seed-config
+          image: 192.168.2.129:5000/clawchat/hermes-agent:v2026.5.27
+          command: ["sh", "-c", "cp -n /seed/config.yaml /opt/data/config.yaml 2>/dev/null || true"]
+          volumeMounts:
+            - name: data
+              mountPath: /opt/data
+            - name: config
+              mountPath: /seed
       containers:
         - name: hermes-agent
           image: 192.168.2.129:5000/clawchat/hermes-agent:v2026.5.27
@@ -136,10 +149,7 @@ spec:
                   key: api_key
           volumeMounts:
             - name: data
-              mountPath: /opt/data
-            - name: config
-              mountPath: /opt/data/config.yaml
-              subPath: config.yaml
+              mountPath: /opt/data          # 整目录可写；config.yaml 由 initContainer 拷进来，不用 subPath
           resources:
             requests:
               cpu: "100m"

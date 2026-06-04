@@ -166,6 +166,19 @@ spec:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+      # openclaw.json 必须是状态卷里的普通【可写】文件：安装会写入 base-url（install-cli 的
+      # write-openclaw 直接 fs.writeFileSync），channels add 也会改它。若把 ConfigMap 用 subPath
+      # 直接挂到 openclaw.json 上，该文件只读，写入会失败（EACCES/EROFS）。所以把 ConfigMap 挂到
+      # /seed，再用 initContainer 拷进 PVC（整个 ~/.openclaw 才是可写卷，不要对 openclaw.json 用 subPath）。
+      initContainers:
+        - name: seed-config
+          image: 192.168.2.129:5000/clawchat/openclaw:v2026.5.27
+          command: ["sh", "-c", "cp -n /seed/openclaw.json /home/node/.openclaw/openclaw.json 2>/dev/null || true"]
+          volumeMounts:
+            - name: state
+              mountPath: /home/node/.openclaw
+            - name: config
+              mountPath: /seed
       containers:
         - name: openclaw
           image: 192.168.2.129:5000/clawchat/openclaw:v2026.5.27
@@ -182,10 +195,7 @@ spec:
                   key: api_key
           volumeMounts:
             - name: state
-              mountPath: /home/node/.openclaw
-            - name: config
-              mountPath: /home/node/.openclaw/openclaw.json
-              subPath: openclaw.json
+              mountPath: /home/node/.openclaw   # 整目录可写；openclaw.json 由 initContainer 拷进来，不用 subPath
           resources:
             requests:
               cpu: "100m"
