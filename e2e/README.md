@@ -25,6 +25,7 @@
 
 ## 公共要点
 
+- **通用启动**：hermes 环境的启动/停止是单一来源 [`lib/hermes-env.sh`](lib/hermes-env.sh)（内嵌 manifest + `up`/`down`/`pause`/`resume`/`chat`/`health`/`exec`/`status` 动词）。runbook 与测试用例都引用它，不再各自复制 manifest；测试脚本 `source` 它复用 `hermes_env_*` 函数。
 - **kubeconfig**：所有 `kubectl` 命令都走 dev 集群凭据 `~/.kube/dev.config`，先 `export KUBECONFIG=~/.kube/dev.config`。
 - **namespace**：`joe-clawchat-dev`。
 - **镜像 registry**：`192.168.2.129:5000`（insecure，dev overlay 已信任）。
