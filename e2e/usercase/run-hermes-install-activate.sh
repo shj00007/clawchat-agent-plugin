@@ -138,6 +138,21 @@ sys.exit(1)
 PY
 }
 
+# 彻底删除本用例的全部资源（含 PVC）并等 Pod 真正消失。删 PVC 是关键：config.yaml 现在是
+# initContainer 拷进 PVC 的可写文件，PVC 还会累积已装插件 / clawchat.sqlite / gateway.log /
+# .env 等残留——不删 PVC，下一轮 apply 会复用旧卷（旧 config + 已激活的插件），导致重跑出现
+# 假结果或脏状态。两处调用：①启动前清掉上一轮残留，确保全新冷安装；②KEEP=0 跑完清理。
+teardown() {
+  kubectl delete -f "$MANIFEST" >/dev/null 2>&1 || true   # manifest 存在时一把删 deploy+cm+pvc
+  kc delete deploy "$APP" configmap "${APP}-config" secret "${APP}-llm" >/dev/null 2>&1 || true
+  kc delete pvc "${APP}-data" >/dev/null 2>&1 || true      # 显式删 PVC，回收本地盘残留
+  # 等旧 Pod / PVC 退出，避免下一轮撞到 Terminating 的旧资源。
+  local waited=0
+  while [[ -n "$(kc get pods -l app="$APP" -o name 2>/dev/null)" ]] && (( waited < 60 )); do
+    sleep 2; waited=$((waited + 2))
+  done
+}
+
 # ── 1. 起 hermes e2e 环境 ─────────────────────────────────────────────────
 # manifest 与 ../hermes-agent-e2e.md 一致：local-path PVC + securityContext(10000)
 # + sleep infinity。LLM 走内部 clawling 网关；此处不放 clawchat platform（靠激活写入）。
@@ -207,6 +222,9 @@ YAML
 
 log "① 起 hermes e2e 环境（ns=$NAMESPACE, tag=$HERMES_IMAGE_TAG）"
 write_manifest
+# 先清掉上一轮可能残留的资源（尤其 PVC）：保证每次都是全新冷安装，不复用旧 config / 旧插件。
+log "   清理上一轮残留（含 PVC）以确保全新环境..."
+teardown
 # LLM key 走 Secret（不落进磁盘上的 manifest）。
 kc create secret generic "${APP}-llm" --from-literal=api_key="$LLM_API_KEY" \
    --dry-run=client -o yaml | kubectl -n "$NAMESPACE" apply -f - >/dev/null \
@@ -331,11 +349,10 @@ fi
 
 # ── 清理 ──────────────────────────────────────────────────────────────────
 if [[ "$KEEP" == "0" ]]; then
-  log "清理环境（KEEP=0）"
-  kubectl delete -f "$MANIFEST" >/dev/null 2>&1 || true
-  kc delete secret "${APP}-llm" >/dev/null 2>&1 || true   # Secret 单独建的，单独删
+  log "清理环境（KEEP=0，含 PVC 残留）"
+  teardown
 else
-  log "环境保留（KEEP=1）。彻底销毁：kubectl delete -f '$MANIFEST'"
+  log "环境保留（KEEP=1）。彻底销毁（含 PVC）：kubectl -n $NAMESPACE delete deploy/$APP cm/${APP}-config secret/${APP}-llm pvc/${APP}-data"
 fi
 rm -f "$AGENT_OUT"
 exit "$RC"

@@ -326,7 +326,7 @@ kubectl -n joe-clawchat-dev scale deploy/openclaw-smoke --replicas=1
 kubectl -n joe-clawchat-dev rollout status deploy/openclaw-smoke --timeout=180s
 ```
 
-> 注意：删 PVC 会清掉 `/home/node/.openclaw`（会话/日志等），恢复后是全新状态；但 LLM 配置（来自 ConfigMap/Secret）不变。
+> 注意：删 PVC 会清掉 `/home/node/.openclaw`（会话/日志等，**以及 initContainer 从 ConfigMap 拷入的 `openclaw.json`**），恢复后是全新状态；但 LLM 配置源（ConfigMap/Secret）不变，恢复时 initContainer 会重新拷一份干净的 `openclaw.json`。反过来：**若保留 PVC，改了 ConfigMap 也不会生效**（`cp -n` 不覆盖已存在文件）——要让新配置生效必须删掉 PVC（或卷里那份 `openclaw.json`）。
 
 ### B. 彻底销毁（默认推荐，测完即弃）
 

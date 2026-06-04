@@ -73,17 +73,27 @@
 cd e2e/usercase
 cp ../.env.example ../.env      # 然后编辑填入 CLAWCHAT_JWT
 ./run-hermes-install-activate.sh           # 跑完默认保留环境，便于复查
-KEEP=0 ./run-hermes-install-activate.sh    # 跑完彻底销毁（删 Deployment/CM/PVC）
+KEEP=0 ./run-hermes-install-activate.sh    # 跑完彻底销毁（删 Deployment/CM/Secret/PVC）
 ```
 
 退出码：`0`=PASS，`1`=FAIL/超时，`2`=配置/前置缺失。
 
+> **每次启动都会先 `teardown` 清掉上一轮残留（含 PVC）再重建**，保证全新冷安装。
+> 这很重要：config.yaml 现在是 initContainer 拷进 PVC 的可写文件，PVC 还会留存已装插件 /
+> `clawchat.sqlite` / `gateway.log` / `.env`；若复用旧 PVC，会拿到旧 config + 已激活的插件，
+> 导致重跑出现**假结果**。所以即便上轮用了 `KEEP=1`，下一轮也会自动清干净再跑。
+
 ## 清理
 
-默认保留环境（`KEEP=1`）。彻底销毁：
+默认保留环境（`KEEP=1`，**含带状态的 PVC**）。彻底销毁（务必连 Secret 和 PVC 一起删，否则
+本地盘残留 + 复用旧卷）：
 
 ```bash
-kubectl -n joe-clawchat-dev delete -f e2e/usercase/.hermes-agent-smoke.gen.yaml
+kubectl -n joe-clawchat-dev delete \
+  deploy/hermes-agent-smoke cm/hermes-agent-smoke-config \
+  secret/hermes-agent-smoke-llm pvc/hermes-agent-smoke-data
+# 确认清干净（PVC 不在 all 里，单列）：
+kubectl -n joe-clawchat-dev get all,cm,secret,pvc -l app=hermes-agent-smoke   # 期望 No resources found
 # 或参见 ../hermes-agent-e2e.md「停止 / 清理」
 ```
 
