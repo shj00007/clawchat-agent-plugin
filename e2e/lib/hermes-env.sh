@@ -7,41 +7,23 @@
 #   source e2e/lib/hermes-env.sh
 #   hermes_env_up; pod=$(hermes_env_pod); ...; hermes_env_down
 #
-# 配置从 e2e/.env 读（相对本文件定位），默认值见下。LLM key 仅经 k8s Secret 注入，不落进
-# 渲染出的 YAML。manifest 内嵌于本文件（render 函数），是 runbook + 测试用例的唯一来源。
+# 配置从 e2e/.env 读，默认值见下。LLM key 仅经 k8s Secret 注入，不落进渲染出的 YAML。
+# manifest 内嵌于本文件（render 函数），是 runbook + 测试用例的唯一来源。
 #
-# 扩展位（openclaw 落地时再做，现在勿建）：把下方标了 [COMMON] 的部分（.env/KUBECONFIG 加载、
-# _kc wrapper、wait helper）抽到 e2e/lib/_common.sh，与未来 e2e/lib/openclaw-env.sh 共用；
-# openclaw 版复刻同一套动词，差异在 uid(1000)/HOME=/home/node/镜像/健康自检命令/manifest。
+# 公共底座（.env/KUBECONFIG 加载、_kc/_e2e_log、rollout helper、共享默认值）抽在
+# lib/_common.sh，与 lib/openclaw-env.sh 共用；两者复刻同一套动词，差异在
+# uid(10000 vs 1000) / HOME / 镜像 / 健康自检命令 / manifest。
 
 # 被执行 vs 被 source：仅在被执行时开严格模式，避免污染 source 它的调用方 shell。
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then _HE_EXECUTED=1; else _HE_EXECUTED=0; fi
 
-# ── [COMMON] 路径与配置加载 ───────────────────────────────────────────────
-_HE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-_HE_E2E_DIR="$(cd "$_HE_LIB_DIR/.." && pwd)"
+# 公共底座（加载 .env、导出 KUBECONFIG、设 NAMESPACE/REGISTRY/LLM_BASE_URL/MODEL、_kc/_e2e_log）
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 
-if [[ -f "$_HE_E2E_DIR/.env" ]]; then
-  set -a; . "$_HE_E2E_DIR/.env"; set +a
-fi
-
-NAMESPACE="${NAMESPACE:-joe-clawchat-dev}"
+# ── hermes 专属默认值（_common 已加载 .env，故 .env 仍可覆盖）────────────────
 HERMES_IMAGE_TAG="${HERMES_IMAGE_TAG:-v2026.5.27}"
 APP="${APP:-hermes-agent-smoke}"
-REGISTRY="${REGISTRY:-192.168.2.129:5000}"
-LLM_BASE_URL="${LLM_BASE_URL:-http://api.clawling.io/v1}"
-MODEL="${MODEL:-deepseek-v4-flash}"
-
-# KUBECONFIG：展开开头的 ~ 并导出（dev 集群凭据，必须显式用）
-_he_kc_path="${KUBECONFIG_PATH:-$HOME/.kube/dev.config}"
-_he_kc_path="${_he_kc_path/#\~/$HOME}"
-export KUBECONFIG="$_he_kc_path"
-
 _GEN_YAML="${TMPDIR:-/tmp}/${APP}.gen.yaml"
-
-# ── [COMMON] 小工具 ───────────────────────────────────────────────────────
-_kc()     { kubectl -n "$NAMESPACE" "$@"; }
-_he_log() { printf '%s\n' "$*" >&2; }
 
 # ── 渲染 manifest（PVC + ConfigMap + Deployment；Secret 由 up 命令式建）──────
 # heredoc 为展开式：$APP 等会展开；$LLM_API_KEY 必须转义为 \$LLM_API_KEY 保持字面量，
@@ -131,7 +113,7 @@ hermes_env_up() ( set -euo pipefail
       --dry-run=client -o yaml | _kc apply -f -
   _kc label secret "${APP}-llm" "app=${APP}" --overwrite >/dev/null
   _kc apply -f "$_GEN_YAML"
-  _kc rollout status "deploy/${APP}" --timeout=180s
+  _e2e_rollout 180s
 )
 
 hermes_env_down() ( set -euo pipefail
@@ -152,7 +134,7 @@ hermes_env_pod() ( set -euo pipefail
   local name
   name="$(_kc get pod -l "app=${APP}" --field-selector=status.phase=Running \
       -o jsonpath='{.items[0].metadata.name}')"
-  [[ -n "$name" ]] || { _he_log "无 Running pod（app=${APP}）——先跑 hermes-env.sh up"; exit 1; }
+  [[ -n "$name" ]] || { _e2e_log "无 Running pod（app=${APP}）——先跑 hermes-env.sh up"; exit 1; }
   printf '%s' "$name"
 )
 
@@ -169,7 +151,7 @@ hermes_env_health() { hermes_env_chat "reply with exactly: HERMES-OK"; }
 hermes_env_exec() ( set -euo pipefail
   local pod; pod="$(hermes_env_pod)"
   [[ "${1:-}" == "--" ]] && shift
-  [[ $# -gt 0 ]] || { _he_log "用法: hermes_env_exec [--] <cmd...>"; exit 1; }
+  [[ $# -gt 0 ]] || { _e2e_log "用法: hermes_env_exec [--] <cmd...>"; exit 1; }
   _kc exec "$pod" -- "$@"
 )
 
@@ -206,9 +188,9 @@ _he_main() {
     health)  hermes_env_health ;;
     exec)    hermes_env_exec "$@" ;;
     status)  hermes_env_status ;;
-    render)  hermes_env_render; _he_log "rendered → $_GEN_YAML" ;;
+    render)  hermes_env_render; _e2e_log "rendered → $_GEN_YAML" ;;
     ""|-h|--help|help) _he_usage ;;
-    *)       _he_log "未知 verb: $verb"; _he_usage; exit 2 ;;
+    *)       _e2e_log "未知 verb: $verb"; _he_usage; exit 2 ;;
   esac
 }
 
