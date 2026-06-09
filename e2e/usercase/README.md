@@ -11,6 +11,7 @@
 | 用例 | 脚本 | 验证内容 |
 |------|------|----------|
 | [`hermes-install-activate.md`](hermes-install-activate.md) | [`run-hermes-install-activate.sh`](run-hermes-install-activate.sh) | 起 hermes e2e 环境 → 申请连接码 → 发 prompt 让 agent 按 `install-dev.md` 安装并激活 clawchat 插件 → 连上 ClawChat。**安装+连接 3 分钟硬超时**，超时即中断返回结果。目标后端：test env（`company.newbaselab.com`）。 |
+| [`openclaw-install-activate.md`](openclaw-install-activate.md) | [`run-openclaw-install-activate.sh`](run-openclaw-install-activate.sh) | OpenClaw 版,复刻真实用户链路:起 openclaw e2e 环境(seed 调整贴近真实部署)→ 申请连接码 → 发 prompt 让 agent **对话式**按 `install-dev.md` 安装(`openclaw@dev`)并激活 → `openclaw gateway` 连上 ClawChat。**3 分钟硬超时**。目标后端：test env。 |
 
 ## 运行约定
 
